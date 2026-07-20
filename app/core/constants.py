@@ -1,0 +1,46 @@
+from enum import Enum
+
+
+class StrEnum(str, Enum):
+    """Tương thích Python 3.10; ``str(member)`` trả về đúng giá trị lưu DB/UI."""
+    def __str__(self) -> str:
+        return self.value
+
+
+class CameraStatus(StrEnum):
+    ONLINE = "ONLINE"
+    OFFLINE = "OFFLINE"
+
+
+class ParkingState(StrEnum):
+    DETECTOR_ERROR = "DETECTOR_ERROR"
+    CAMERA_DISABLED = "CAMERA_DISABLED"
+    CAMERA_OFFLINE = "CAMERA_OFFLINE"
+    UNKNOWN = "UNKNOWN"
+    EMPTY = "EMPTY"
+    VEHICLE_CANDIDATE = "VEHICLE_CANDIDATE"
+    OCCUPIED = "OCCUPIED"
+    LEAVING = "LEAVING"
+
+
+class SessionStatus(StrEnum):
+    CANDIDATE = "CANDIDATE"
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    INTERRUPTED = "INTERRUPTED"
+    RECOVERED = "RECOVERED"
+
+
+class EventType(StrEnum):
+    CAMERA_ONLINE = "CAMERA_ONLINE"
+    CAMERA_OFFLINE = "CAMERA_OFFLINE"
+    VEHICLE_DETECTED = "VEHICLE_DETECTED"
+    VEHICLE_CANDIDATE = "VEHICLE_CANDIDATE"
+    PARK_START = "PARK_START"
+    TRACK_LOST = "TRACK_LOST"
+    TRACK_RECOVERED = "TRACK_RECOVERED"
+    VEHICLE_LEAVING = "VEHICLE_LEAVING"
+    PARK_END = "PARK_END"
+    SYSTEM_RECOVERY = "SYSTEM_RECOVERY"
+
+ALLOWED_VEHICLE_CLASSES = {"car", "motorcycle", "bus", "truck"}
