@@ -24,15 +24,18 @@ class CameraWorker(QObject):
     @Slot()
     def run(self):
         self.running=True; backoff=1.0; cap=None; next_process=0.0; online_announced=False; detector_error_sent=False; frame_index=0
+        if self.detector.enabled: self.log.info("Detector ready model=%s device=%s half=%s",self.detector.name,getattr(self.detector,"device","-"),getattr(self.detector,"half",False))
         while self.running:
             try:
                 if cap is None or not cap.is_opened():
-                    cap=RtspCapture(self.camera.rtsp_url,read_timeout=8.0,frame_callback=self._emit_preview,preview_fps=5.0); self.capture=cap
+                    cap=RtspCapture(self.camera.rtsp_url,read_timeout=8.0,frame_callback=self._emit_preview,preview_fps=settings.preview_fps); self.capture=cap
                     if not cap.open(): raise ConnectionError("Không mở được FFmpeg để đọc RTSP")
                 ok,frame=cap.read()
                 if not ok: raise ConnectionError("Không đọc được frame")
                 frame=rotate_frame(frame,self.camera.rotation_degrees)
-                if not online_announced: self.status_changed.emit(self.camera.id,True,"ONLINE"); online_announced=True
+                if not online_announced:
+                    self.log.info("First frame received shape=%s",tuple(frame.shape))
+                    self.status_changed.emit(self.camera.id,True,"ONLINE"); online_announced=True
                 backoff=1.0
                 now=time.monotonic()
                 if now<next_process: continue

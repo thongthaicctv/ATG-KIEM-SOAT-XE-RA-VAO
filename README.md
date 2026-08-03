@@ -45,14 +45,51 @@ python -m pip install -r requirements-ai.txt
 $env:PARKING_DETECTOR_MODEL = "D:\models\custom.pt"
 ```
 
+Với máy dùng NVIDIA/CUDA, cài bản PyTorch phù hợp theo trình chọn chính thức
+của PyTorch trước khi cài `requirements-ai.txt`. Môi trường phát triển và chạy
+test dùng:
+
+```powershell
+python -m pip install -r requirements-dev.txt
+```
+
 Nếu file model mặc định không tồn tại và chưa đặt `PARKING_DETECTOR_MODEL`, ứng dụng dùng `NullDetector`; UI, camera, polygon và logic vẫn chạy nhưng không sinh detection. Model phải nhận các lớp COCO `car`, `truck`, `bus`; xe máy chỉ bật bằng cấu hình mã nguồn `enable_motorcycles` trong Phase 1.
 
 ## Chạy ứng dụng và test
 
 ```powershell
-python run_app.py
-python -m pytest -q
+.\.venv\Scripts\python.exe .\run_app.py
+.\.venv\Scripts\python.exe -m pytest -q
 ```
+
+Không chạy trực tiếp `app\main.py`. Trên máy phát triển mới, dùng các lệnh chuẩn:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-dev.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\check-environment.ps1
+powershell -ExecutionPolicy Bypass -File .\config\debug-1cam.ps1
+```
+
+## Profile máy chạy
+
+Ứng dụng có hai profile triển khai:
+
+```powershell
+# Máy hiện tại, debug đúng 1 camera
+powershell -ExecutionPolicy Bypass -File config/debug-1cam.ps1
+
+# Máy production có CUDA, tối đa 10 camera
+powershell -ExecutionPolicy Bypass -File config/production-10cam.ps1
+```
+
+Kiểm tra model, CUDA và cấu hình trước khi mở ứng dụng:
+
+```powershell
+$env:PARKING_RUNTIME_PROFILE = "debug_1cam" # hoặc production_10cam
+python scripts/check_runtime.py
+```
+
+Chi tiết phần cứng, tải AI, thứ tự soak test và trạng thái từng phase nằm trong `DEPLOYMENT_PROFILES.md`.
 
 ## Sử dụng
 

@@ -7,14 +7,17 @@ from .tracker import CentroidTracker
 
 class CameraManager(QObject):
     frame_ready=Signal(int,object,object); preview_frame=Signal(int,object,object); status_changed=Signal(int,bool,str); detector_error=Signal(int,str); error=Signal(int,str)
-    def __init__(self,detector,parent=None):
-        super().__init__(parent); self.detector=detector; self.items={}; self.preview_sequences={}; self.preview_timer=QTimer(self); self.preview_timer.setInterval(200); self.preview_timer.timeout.connect(self._flush_previews); self.preview_timer.start()
+    def __init__(self,detector,parent=None,max_cameras=10,preview_fps=5.0):
+        super().__init__(parent); self.detector=detector; self.max_cameras=max(1,int(max_cameras)); self.items={}; self.preview_sequences={}; self.preview_timer=QTimer(self); self.preview_timer.setInterval(max(50,round(1000/max(.1,preview_fps)))); self.preview_timer.timeout.connect(self._flush_previews); self.preview_timer.start()
     def start_camera(self,camera):
         self.stop_camera(camera.id)
+        if len(self.items)>=self.max_cameras:
+            self.error.emit(camera.id,f"Profile chỉ cho phép tối đa {self.max_cameras} camera đang chạy")
+            return False
         thread=QThread(self); worker=CameraWorker(camera,self.detector,CentroidTracker); worker.moveToThread(thread)
         thread.started.connect(worker.run); worker.frame_ready.connect(self.frame_ready); worker.status_changed.connect(self.status_changed); worker.detector_error.connect(self.detector_error); worker.error.connect(self.error)
         worker.stopped.connect(thread.quit); thread.finished.connect(worker.deleteLater); thread.finished.connect(thread.deleteLater)
-        self.items[camera.id]=(thread,worker); thread.start()
+        self.items[camera.id]=(thread,worker); thread.start(); return True
     def stop_camera(self,camera_id):
         item=self.items.pop(camera_id,None)
         if item:

@@ -1,0 +1,10 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {"label":"Setup Development Environment","type":"shell","command":"powershell","args":["-ExecutionPolicy","Bypass","-File","${workspaceFolder}\\scripts\\setup-dev.ps1"],"options":{"cwd":"${workspaceFolder}"}},
+    {"label":"Check Environment","type":"shell","command":"powershell","args":["-ExecutionPolicy","Bypass","-File","${workspaceFolder}\\scripts\\check-environment.ps1"],"options":{"cwd":"${workspaceFolder}"}},
+    {"label":"Run Tests","type":"shell","command":"${workspaceFolder}\\.venv\\Scripts\\python.exe","args":["-m","pytest","-v"],"options":{"cwd":"${workspaceFolder}"}},
+    {"label":"Debug 1 Camera","type":"shell","command":"powershell","args":["-ExecutionPolicy","Bypass","-File","${workspaceFolder}\\config\\debug-1cam.ps1"],"options":{"cwd":"${workspaceFolder}"}},
+    {"label":"Run Application","type":"shell","command":"${workspaceFolder}\\.venv\\Scripts\\python.exe","args":["${workspaceFolder}\\run_app.py"],"options":{"cwd":"${workspaceFolder}"}}
+  ]
+}

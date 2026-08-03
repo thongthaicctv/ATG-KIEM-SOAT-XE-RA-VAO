@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import logging,time
+import logging,time,threading
 from dataclasses import dataclass
 from app.core.constants import ALLOWED_VEHICLE_CLASSES
 from app.core.config import settings
@@ -27,17 +27,25 @@ class NullDetector:
 
 
 class YoloDetector:
-    def __init__(self,model_path: str,confidence=.4,enable_motorcycles=False):
+    def __init__(self,model_path: str,confidence=.4,enable_motorcycles=False,device="auto",half=False):
         from ultralytics import YOLO
         import torch
         from pathlib import Path
         self.log=logging.getLogger(__name__); self.model=YOLO(model_path); self.confidence=confidence; self.enabled=True; self.name=str(Path(model_path).resolve()); self.error=None; self.last_stats={}; self.last_log_at=0.0
-        self.device="cuda" if torch.cuda.is_available() else "cpu"; self.names={int(k):str(v).lower() for k,v in self.model.names.items()}
+        self.device=("cuda" if torch.cuda.is_available() else "cpu") if device=="auto" else device
+        if self.device.startswith("cuda") and not torch.cuda.is_available(): raise RuntimeError("Profile yêu cầu CUDA nhưng PyTorch không nhận GPU")
+        self.half=bool(half and self.device.startswith("cuda")); self._lock=threading.Lock(); self.names={int(k):str(v).lower() for k,v in self.model.names.items()}
         self.log.info("Detector loaded model=%s exists=%s device=%s imgsz=per-camera confidence=%.2f names=%s allowed=%s",self.name,Path(model_path).exists(),self.device,self.confidence,self.names,sorted(ALLOWED_VEHICLE_CLASSES))
     def detect(self,frame,confidence=None,enable_motorcycles=True,image_size=640):
         started=time.perf_counter(); output=[]; raw=0; filtered=[]; threshold=float(confidence if confidence is not None else self.confidence); allowed=set(ALLOWED_VEHICLE_CLASSES)
         if not enable_motorcycles: allowed.discard("motorcycle")
-        for result in self.model.predict(frame,conf=threshold,imgsz=int(image_size),device=self.device,verbose=False):
+        # Một model được dùng chung cho các camera. Ultralytics không bảo đảm một
+        # model instance có thể predict đồng thời từ nhiều QThread.
+        predict_options={"conf":threshold,"imgsz":int(image_size),"device":self.device,"verbose":False}
+        if self.half: predict_options["half"]=True
+        with self._lock:
+            results=self.model.predict(frame,**predict_options)
+        for result in results:
             for box in result.boxes:
                 raw+=1; class_id=int(box.cls.item()); name=str(result.names[class_id]).strip().lower()
                 if is_allowed_vehicle_class(name,enable_motorcycles): output.append(Detection(tuple(map(float,box.xyxy[0].tolist())),float(box.conf.item()),name))
@@ -50,9 +58,9 @@ class YoloDetector:
         return output
 
 
-def build_detector(model_path: str,confidence=.4,enable_motorcycles=False):
+def build_detector(model_path: str,confidence=.4,enable_motorcycles=False,device="auto",half=False):
     from pathlib import Path
     log=logging.getLogger(__name__); log.info("Detector config model=%s exists=%s confidence=%.2f",str(Path(model_path).resolve()) if model_path else "",bool(model_path and Path(model_path).exists()),confidence)
-    if not model_path or not Path(model_path).exists(): log.error("Detector error: model không tồn tại"); return NullDetector("Model không tồn tại")
-    try: return YoloDetector(model_path,confidence,enable_motorcycles)
+    if not model_path or not Path(model_path).exists(): log.error("DETECTOR_MODEL_NOT_FOUND: %s",model_path); return NullDetector(f"DETECTOR_MODEL_NOT_FOUND: {model_path}")
+    try: return YoloDetector(model_path,confidence,enable_motorcycles,device=device,half=half)
     except Exception as exc: log.exception("Detector error: không tải được model"); return NullDetector(str(exc))

@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Parking Monitor - Debug 1 Camera",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run_app.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+      "env": {
+        "PARKING_RUNTIME_PROFILE": "debug_1cam",
+        "PARKING_DETECTOR_DEVICE": "cpu",
+        "PARKING_DETECTOR_HALF": "0",
+        "PARKING_MAX_CAMERAS": "1"
+      }
+    },
+    {
+      "name": "Parking Monitor - Normal",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run_app.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+    }
+  ]
+}

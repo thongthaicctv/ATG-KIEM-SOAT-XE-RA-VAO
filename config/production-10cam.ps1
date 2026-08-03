@@ -1,0 +1,5 @@
+$env:PARKING_RUNTIME_PROFILE = "production_10cam"
+$env:PARKING_DETECTOR_MODEL = "$PSScriptRoot\..\models\yolo11s.pt"
+$env:PARKING_DETECTOR_DEVICE = "cuda"
+$env:PARKING_DETECTOR_HALF = "1"
+& "$PSScriptRoot\..\.venv\Scripts\python.exe" "$PSScriptRoot\..\run_app.py"

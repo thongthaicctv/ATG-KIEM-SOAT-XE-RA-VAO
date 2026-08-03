@@ -17,6 +17,7 @@ from app.services.parking_state_engine import ParkingStateEngine
 from app.services.snapshot_service import SnapshotService
 from app.ui.camera_dialog import CameraDialog
 from app.ui.event_log_widget import EventLogWidget
+from app.ui.debug_guide_dialog import DebugGuideDialog
 from app.ui.monitor_widget import MonitorWidget
 from app.ui.polygon_editor import PolygonEditor
 from app.ui.preview_dialog import PreviewDialog
@@ -27,19 +28,20 @@ from app.utils.time_utils import format_local_datetime,seconds_between,utc_now
 class MainWindow(QMainWindow):
     def __init__(self,settings):
         super().__init__(); self.settings=settings; self.db=SessionLocal(); self.cameras=CameraRepository(self.db); self.parking=ParkingRepository(self.db); self.session_service=ParkingSessionService(self.parking); self.snapshots=SnapshotService(); self.log=logging.getLogger(__name__)
-        self.detector=build_detector(settings.detector_model,settings.vehicle_confidence,settings.enable_motorcycles)
-        self.manager=CameraManager(self.detector,self); self.manager.frame_ready.connect(self.on_frame); self.manager.preview_frame.connect(self.on_preview_frame); self.manager.status_changed.connect(self.on_camera_status); self.manager.detector_error.connect(self.on_detector_error); self.manager.error.connect(lambda cid,msg:self.log.warning("Camera %s: %s",cid,msg))
+        self.detector=build_detector(settings.detector_model,settings.vehicle_confidence,settings.enable_motorcycles,settings.detector_device,settings.detector_half)
+        self.manager=CameraManager(self.detector,self,max_cameras=settings.max_cameras,preview_fps=settings.preview_fps); self.manager.frame_ready.connect(self.on_frame); self.manager.preview_frame.connect(self.on_preview_frame); self.manager.status_changed.connect(self.on_camera_status); self.manager.detector_error.connect(self.on_detector_error); self.manager.error.connect(lambda cid,msg:self.log.warning("Camera %s: %s",cid,msg))
         self.engines={}; self.frames={}; self.raw_frames={}; self.last_payload={}; self.last_preview_telemetry={}; self.active={}; self.preview_dialogs={}; self.setWindowTitle("Parking Monitoring System - Phase 1"); self.resize(1280,800); self._build_ui(); self.reload(); self._recover()
     def _build_ui(self):
         splitter=QSplitter(Qt.Vertical); tabs=QTabWidget(); self.camera_page=QWidget(); lay=QVBoxLayout(self.camera_page); bar=QHBoxLayout();
-        for text,handler in [("Thêm",self.add_camera),("Sửa",self.edit_camera),("Xóa",self.delete_camera),("Kiểm tra RTSP",self.test_rtsp),("Mở preview",self.open_preview),("Vẽ polygon",self.edit_polygon),("Làm mới",self.reload)]:
+        for text,handler in [("Thêm",self.add_camera),("Sửa",self.edit_camera),("Xóa",self.delete_camera),("Kiểm tra RTSP",self.test_rtsp),("Mở preview",self.open_preview),("Vẽ polygon",self.edit_polygon),("Hướng dẫn debug",self.open_debug_guide),("Làm mới",self.reload)]:
             b=QPushButton(text); b.clicked.connect(lambda _checked=False,h=handler:h()); bar.addWidget(b)
         bar.addStretch(); lay.addLayout(bar); self.camera_table=QTableWidget(0,7); self.camera_table.setHorizontalHeaderLabels(["Mã","Tên","Vị trí","RTSP","Trạng thái","FPS","Polygon"]); self.camera_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.camera_table.setEditTriggers(QAbstractItemView.NoEditTriggers); lay.addWidget(self.camera_table)
         self.monitor=MonitorWidget(); self.monitor.preview_requested.connect(self.open_preview); self.history=QTableWidget(0,9); self.history.setHorizontalHeaderLabels(["Session","Camera","Vị trí","Loại xe","Phát hiện","Xác nhận","Rời","Thời lượng","Trạng thái"]); self.history.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        tabs.addTab(self.camera_page,"Camera"); tabs.addTab(self.monitor,"Giám sát"); tabs.addTab(self.history,"Lịch sử phiên đỗ"); splitter.addWidget(tabs); self.event_log=EventLogWidget(); splitter.addWidget(self.event_log); splitter.setSizes([620,180]); self.setCentralWidget(splitter); self.setStatusBar(QStatusBar()); self.statusBar().showMessage(f"Database: sẵn sàng | AI: {self.detector.name}")
+        tabs.addTab(self.camera_page,"Camera"); tabs.addTab(self.monitor,"Giám sát"); tabs.addTab(self.history,"Lịch sử phiên đỗ"); splitter.addWidget(tabs); self.event_log=EventLogWidget(); splitter.addWidget(self.event_log); splitter.setSizes([620,180]); self.setCentralWidget(splitter); self.setStatusBar(QStatusBar()); self.statusBar().showMessage(f"Profile: {self.settings.runtime_profile} | tối đa {self.settings.max_cameras} camera | AI: {self.detector.name}")
     def selected_camera(self):
         row=self.camera_table.currentRow()
         return self.cameras.get(int(self.camera_table.item(row,0).data(Qt.UserRole))) if row>=0 else None
+    def open_debug_guide(self): DebugGuideDialog(self.settings,self).exec()
     def reload(self):
         cameras=self.cameras.list(); self.camera_table.setRowCount(len(cameras))
         for r,c in enumerate(cameras):
@@ -47,7 +49,7 @@ class MainWindow(QMainWindow):
             values=[c.camera_code,c.camera_name,c.parking_position_code,mask_rtsp_url(c.rtsp_url),display_status,f"{c.processing_fps:g}","Có" if c.polygon_points else "Chưa"]
             for col,value in enumerate(values): item=QTableWidgetItem(str(value)); item.setData(Qt.UserRole,c.id); self.camera_table.setItem(r,col,item)
             if c.id not in self.engines: self.engines[c.id]=ParkingStateEngine(c.parking_confirm_seconds,c.exit_confirm_seconds,self.settings.stable_frames_after_reconnect,c.track_lost_grace_seconds,c.detection_miss_grace_seconds)
-            if c.enabled and c.id not in self.manager.items: self.manager.start_camera(c)
+            if c.enabled and self.detector.enabled and c.id not in self.manager.items: self.manager.start_camera(c)
         self.monitor.set_cameras(cameras); self.reload_history()
     def reload_history(self):
         rows=self.parking.recent_sessions(); self.history.setRowCount(len(rows))
@@ -129,12 +131,18 @@ class MainWindow(QMainWindow):
             if item and int(item.data(Qt.UserRole))==camera_id:
                 self.camera_table.item(row,4).setText("ONLINE" if online else "OFFLINE"); break
         engine=self.engines.get(camera_id)
-        if not online and engine: engine.camera_offline(); self.monitor.update_camera(camera_id,state="CAMERA_OFFLINE")
+        if online:
+            self.log.info("Camera online camera=%s first_frame=true detector_ready=%s",camera.camera_code,self.detector.enabled)
+            self.monitor.update_camera(camera_id,state="UNKNOWN",tracker="IDLE")
+        elif engine:
+            transition=engine.camera_offline(); self.log.info("State transition camera=%s %s -> %s action=%s",camera.camera_code,transition.previous,transition.current,transition.action); self.monitor.update_camera(camera_id,state="CAMERA_OFFLINE")
     def on_detector_error(self,camera_id,message):
         self.log.error("Camera %s detector error: %s",camera_id,message); self.monitor.update_camera(camera_id,state="DETECTOR_ERROR",tracker="ERROR")
     def on_frame(self,camera_id,frame,payload):
         camera=self.cameras.get(camera_id); vehicle=payload["primary"]; self.last_payload[camera_id]=payload
         engine=self.engines[camera_id]; now=payload["time"]; transition=engine.update(vehicle,now,True,payload.get("monotonic_time")); session=self.active.get(camera_id)
+        if transition.previous!=transition.current:
+            self.log.info("State transition camera=%s %s -> %s action=%s raw=%s vehicle=%s",camera.camera_code,transition.previous,transition.current,transition.action,payload.get("stats",{}).get("raw_detections",0),vehicle is not None)
         if session and vehicle and self.session_service.ensure_track(session,vehicle,now):
             self.log.info("Track changed but session retained session=%s new_track=%s",session.session_code,vehicle.track_id)
         event_vehicle=transition.vehicle or vehicle
