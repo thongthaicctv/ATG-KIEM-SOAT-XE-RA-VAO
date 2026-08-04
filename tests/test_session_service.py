@@ -15,9 +15,13 @@ def test_create_link_and_close_session(db):
     srv.link_track(s,VehicleObservation("11","car",.8,(1,1,5,5)),T+timedelta(seconds=16)); assert len(s.track_links)==2
     srv.end(s,c.id,V,T+timedelta(seconds=30)); assert s.status=="COMPLETED" and s.parking_duration_seconds==15
 
-def test_only_one_active_session_and_unique_codes(db):
-    c,srv=setup(db); first=srv.start(c,V,T,T+timedelta(seconds=15)); second=srv.start(c,VehicleObservation("20","car",.8,(1,1,5,5)),T,T+timedelta(seconds=20)); assert second.id==first.id
+def test_multiple_active_sessions_and_unique_codes(db):
+    c,srv=setup(db); first=srv.start(c,V,T,T+timedelta(seconds=15)); second=srv.start(c,VehicleObservation("20","car",.8,(1,1,5,5)),T,T+timedelta(seconds=20)); assert second.id!=first.id; assert second.session_code!=first.session_code
 
 def test_recovery_reuses_session(db):
     c,srv=setup(db); s=srv.start(c,V,T,T); recovered=srv.recover(s,VehicleObservation("99","car",.8,(1,1,5,5)),T+timedelta(seconds=2)); assert recovered.id==s.id and recovered.status=="RECOVERED"
+
+def test_session_start_is_idempotent_by_vehicle_instance(db):
+    c,srv=setup(db); first=srv.start(c,V,T,T,vehicle_instance_id="vehicle-uuid-1"); second=srv.start(c,VehicleObservation("99","car",.8,(1,1,5,5)),T,T+timedelta(seconds=5),vehicle_instance_id="vehicle-uuid-1")
+    assert first.id==second.id and len(srv.repo.active_sessions())==1
 

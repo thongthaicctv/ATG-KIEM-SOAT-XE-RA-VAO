@@ -20,7 +20,7 @@ class ParkingStateEngine:
     def __init__(self, parking_confirm_seconds=15.0, exit_confirm_seconds=3.0, stable_frames_after_reconnect=20,track_lost_grace_seconds=0.0,detection_miss_grace_seconds=5.0,presence_window_seconds=5.0,presence_ratio_threshold=.40):
         self.parking_confirm_seconds=parking_confirm_seconds; self.exit_confirm_seconds=exit_confirm_seconds
         self.stable_frames_after_reconnect=stable_frames_after_reconnect; self.track_lost_grace_seconds=track_lost_grace_seconds; self.detection_miss_grace_seconds=detection_miss_grace_seconds; self.presence_window_seconds=presence_window_seconds; self.presence_ratio_threshold=presence_ratio_threshold; self.state=ParkingState.UNKNOWN
-        self.candidate_since=None; self.empty_since=None; self.lost_since=None; self.last_vehicle_seen_at=None; self.candidate_tick=None; self.empty_tick=None; self.lost_tick=None; self.last_vehicle_seen_tick=None; self.candidate_miss_elapsed=0.0; self.presence_ratio=0.0; self.cancel_reason=None; self.presence_samples=deque(); self.stable_frames=0; self.primary=None; self.has_active_session=False; self.startup_mode=True
+        self.candidate_since=None; self.empty_since=None; self.lost_since=None; self.last_vehicle_seen_at=None; self.candidate_tick=None; self.empty_tick=None; self.lost_tick=None; self.last_vehicle_seen_tick=None; self.candidate_miss_elapsed=0.0; self.presence_ratio=0.0; self.cancel_reason=None; self.presence_samples=deque(); self.stable_frames=0; self.primary=None; self.has_active_session=False; self.startup_mode=True; self.offline_started_at=None; self.offline_started_tick=None; self.recovery_active=False
 
     def _record_presence(self,tick,present):
         self.presence_samples.append((tick,bool(present)))
@@ -30,22 +30,26 @@ class ParkingStateEngine:
     def _start_candidate(self,vehicle,now,tick):
         self.state=ParkingState.VEHICLE_CANDIDATE; self.primary=vehicle; self.candidate_since=now; self.candidate_tick=tick; self.last_vehicle_seen_at=now; self.last_vehicle_seen_tick=tick; self.candidate_miss_elapsed=0; self.cancel_reason=None; self.presence_samples.clear(); self._record_presence(tick,True)
 
-    def restore_active_session(self): self.has_active_session=True; self.state=ParkingState.UNKNOWN
+    def restore_active_session(self): self.has_active_session=True; self.state=ParkingState.RECOVERY_PENDING; self.recovery_active=False; self.stable_frames=0
 
-    def camera_offline(self):
+    def camera_offline(self,now=None,monotonic_now=None):
         previous=self.state; self.state=ParkingState.CAMERA_OFFLINE
+        if previous!=ParkingState.CAMERA_OFFLINE:
+            self.offline_started_at=now; self.offline_started_tick=monotonic_now
+        self.recovery_active=self.recovery_active or self.has_active_session
         return StateTransition(previous,self.state,"CAMERA_OFFLINE",self.primary)
 
-    def update(self, vehicle: VehicleObservation | None, now: datetime, camera_online=True,monotonic_now=None):
+    def update(self, vehicle: VehicleObservation | None, now: datetime, camera_online=True,monotonic_now=None,identity_uncertain=False):
         tick=float(monotonic_now if monotonic_now is not None else now.timestamp())
         previous=self.state
         if not camera_online: return self.camera_offline()
-        if self.state==ParkingState.CAMERA_OFFLINE: self.state=ParkingState.UNKNOWN; self.stable_frames=0
-        if self.state==ParkingState.UNKNOWN:
+        if self.state==ParkingState.CAMERA_OFFLINE: self.state=ParkingState.RECOVERY_PENDING if self.has_active_session else ParkingState.UNKNOWN; self.stable_frames=0
+        if self.state in (ParkingState.UNKNOWN,ParkingState.RECOVERY_PENDING):
             self.stable_frames+=1
             if self.stable_frames<self.stable_frames_after_reconnect: return StateTransition(previous,self.state)
             if self.has_active_session:
                 if vehicle: self.primary=vehicle; self.state=ParkingState.OCCUPIED; return StateTransition(previous,self.state,"RECOVER_SESSION",vehicle)
+                if identity_uncertain: self.state=ParkingState.IDENTITY_UNCERTAIN; return StateTransition(previous,self.state,"IDENTITY_UNCERTAIN")
                 self.state=ParkingState.LEAVING; self.empty_since=now; self.empty_tick=tick; return StateTransition(previous,self.state,"VEHICLE_LEAVING")
             if vehicle: self._start_candidate(vehicle,now,tick)
             else: self.state=ParkingState.EMPTY; self.primary=None; self.candidate_since=None; self.candidate_tick=None
@@ -82,6 +86,11 @@ class ParkingStateEngine:
                 if tick-(self.lost_tick if self.lost_tick is not None else tick)<grace: return StateTransition(previous,self.state,None,self.primary)
                 self.state=ParkingState.LEAVING; self.empty_since=now; self.empty_tick=tick
                 return StateTransition(previous,self.state,"VEHICLE_LEAVING",self.primary)
+        elif self.state==ParkingState.IDENTITY_UNCERTAIN:
+            if vehicle:
+                self.state=ParkingState.OCCUPIED; self.primary=vehicle; return StateTransition(previous,self.state,"RECOVER_SESSION",vehicle)
+            if not identity_uncertain:
+                self.state=ParkingState.LEAVING; self.empty_since=now; self.empty_tick=tick; return StateTransition(previous,self.state,"VEHICLE_LEAVING",self.primary)
         elif self.state==ParkingState.LEAVING:
             if vehicle:
                 self.state=ParkingState.OCCUPIED; self.empty_since=None; self.empty_tick=None; self.lost_since=None; self.lost_tick=None; self.primary=vehicle
@@ -89,5 +98,6 @@ class ParkingStateEngine:
             if self.empty_tick is not None and tick-self.empty_tick>=self.exit_confirm_seconds:
                 self.state=ParkingState.EMPTY; self.has_active_session=False; self.empty_since=None; self.empty_tick=None
                 old=self.primary; self.primary=None
-                return StateTransition(previous,self.state,"PARK_END",old)
+                action="PARK_END_RECOVERY" if self.recovery_active else "PARK_END"; self.recovery_active=False
+                return StateTransition(previous,self.state,action,old)
         return StateTransition(previous,self.state,None,self.primary)

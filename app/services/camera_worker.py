@@ -10,6 +10,7 @@ from .detector import Detection
 from app.core.config import settings
 from .tracker import calculate_track_buffer
 from .polygon_engine import PolygonEngine
+from .session_vehicle_matcher import attach_vehicle_signature
 from .rtsp_capture import RtspCapture
 
 
@@ -24,11 +25,12 @@ class CameraWorker(QObject):
     @Slot()
     def run(self):
         self.running=True; backoff=1.0; cap=None; next_process=0.0; online_announced=False; detector_error_sent=False; frame_index=0
+        self.log.info("Worker config camera=%s parking_confirm_seconds=%s exit_confirm_seconds=%s detection_grace_seconds=%s track_lost_seconds=%s zone_type=%s capacity=%s",self.camera.camera_code,self.camera.parking_confirm_seconds,self.camera.exit_confirm_seconds,self.camera.detection_miss_grace_seconds,self.camera.track_lost_grace_seconds,self.camera.zone_type,self.camera.capacity)
         if self.detector.enabled: self.log.info("Detector ready model=%s device=%s half=%s",self.detector.name,getattr(self.detector,"device","-"),getattr(self.detector,"half",False))
         while self.running:
             try:
                 if cap is None or not cap.is_opened():
-                    cap=RtspCapture(self.camera.rtsp_url,read_timeout=8.0,frame_callback=self._emit_preview,preview_fps=settings.preview_fps); self.capture=cap
+                    cap=RtspCapture(self.camera.rtsp_url,read_timeout=8.0,frame_callback=self._emit_preview,preview_fps=self.camera.preview_fps); self.capture=cap
                     if not cap.open(): raise ConnectionError("Không mở được FFmpeg để đọc RTSP")
                 ok,frame=cap.read()
                 if not ok: raise ConnectionError("Không đọc được frame")
@@ -50,7 +52,8 @@ class CameraWorker(QObject):
                 if roi_offset!=(0,0):
                     ox,oy=roi_offset; detections=[Detection((d.bbox[0]+ox,d.bbox[1]+oy,d.bbox[2]+ox,d.bbox[3]+oy),d.confidence,d.vehicle_class) for d in detections]
                 tracks=self.tracker.update(detections,frame_index=frame_index,now=datetime.now(timezone.utc))
-                primary=None
+                for tracked_vehicle in tracks: attach_vehicle_signature(tracked_vehicle,frame)
+                primary=None; candidates=[]
                 if self.camera.polygon_points:
                     h,w=frame.shape[:2]; polygon=denormalize_points([tuple(p) for p in self.camera.polygon_points],w,h)
                     candidates=PolygonEngine(polygon,self.camera.vehicle_polygon_overlap_threshold).evaluate(tracks)
@@ -64,7 +67,7 @@ class CameraWorker(QObject):
                 if self.camera.ai_debug_overlay and telemetry_now-self.last_tracker_telemetry>=settings.telemetry_interval_seconds:
                     self.last_tracker_telemetry=telemetry_now; inference_ms=float(stats.get("inference_ms",0)); actual_fps=1000/inference_ms if inference_ms>0 else 0
                     self.log.info("Tracker telemetry frame=%d detections=%d inputs=%s outputs=%s configured_fps=%.2f actual_ai_fps=%.2f track_lost_seconds=%.2f calculated_track_buffer=%d",frame_index,len(detections),[(round(d.confidence,3),tuple(round(v) for v in d.bbox)) for d in detections],[(t.track_id,t.track_age,t.time_since_update) for t in tracks],self.camera.processing_fps,actual_fps,self.camera.track_lost_grace_seconds,self.tracker_buffer_frames,extra={"telemetry":True})
-                self.frame_ready.emit(self.camera.id,frame,{"primary":primary,"tracks":tracks,"detections":detections,"stats":stats,"time":datetime.now(timezone.utc),"monotonic_time":inference_end})
+                self.frame_ready.emit(self.camera.id,frame,{"primary":primary,"polygon_candidates":candidates,"tracks":tracks,"detections":detections,"stats":stats,"time":datetime.now(timezone.utc),"monotonic_time":inference_end})
             except Exception as exc:
                 if not self.running:
                     break
@@ -88,6 +91,12 @@ class CameraWorker(QObject):
         with self.preview_lock:
             if self.latest_preview is None or self.latest_preview[0]==last_sequence: return None
             item=self.latest_preview; self.latest_preview=None; return item
+
+    def set_preview_fps(self,preview_fps):
+        value=float(preview_fps)
+        if not 1 <= value <= 15: raise ValueError("preview_fps phải nằm trong khoảng 1–15 FPS")
+        self.camera.preview_fps=value
+        if self.capture: self.capture.set_preview_fps(value)
 
     @Slot()
     def stop(self):

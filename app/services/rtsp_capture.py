@@ -53,6 +53,11 @@ class RtspCapture:
         frame,self.last_capture_timestamp,self.last_capture_wall_time=item
         return True,frame
 
+    def set_preview_fps(self,preview_fps):
+        value=float(preview_fps)
+        if not 1 <= value <= 15: raise ValueError("preview_fps phải nằm trong khoảng 1–15 FPS")
+        self.preview_interval=1/value
+
     @property
     def queue_size(self): return self.frames.qsize()
     def release(self):

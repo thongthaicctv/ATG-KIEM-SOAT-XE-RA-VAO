@@ -19,6 +19,7 @@ Mục tiêu: máy phát triển hiện tại (i5-10400F, RAM 32 GB, NVIDIA T600 
 - Model: `models/yolo11n.pt`.
 - AI: 4 FPS, `imgsz=640`, full precision, device tự chọn.
 - Preview: 5 FPS; bật debug overlay.
+- Mỗi camera có `preview_fps` riêng từ 1–15 FPS. Giá trị này chỉ ảnh hưởng độ mượt UI, độc lập với FPS AI.
 - Giữ crop ROI polygon để giảm vùng suy luận.
 - Chạy: `powershell -ExecutionPolicy Bypass -File config/debug-1cam.ps1`.
 
@@ -43,3 +44,14 @@ YOLO được dùng chung giữa các camera và có khóa suy luận để trá
 4. Không tăng RAM liên tục; không có `FRAME_DELAY` kéo dài; một camera lỗi không ảnh hưởng camera khác.
 5. Đối chiếu thủ công các ca xe đi ngang, dừng ngắn, che khuất, reconnect và khởi động lại.
 6. Chỉ sau khi đạt các mục trên mới khóa cấu hình production và triển khai Phase 2.
+
+## Nghiệm thu Phase 1.3 một camera
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-dev.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\check-environment.ps1
+.\.venv\Scripts\python.exe -m pytest -q
+powershell -ExecutionPolicy Bypass -File .\scripts\acceptance-1cam.ps1
+```
+
+Không chạy `python app\main.py`. Nếu gặp `ModuleNotFoundError: app`, quay về project root và chạy `.\.venv\Scripts\python.exe .\run_app.py`. Nếu thiếu `.venv`, chạy `scripts\setup-dev.ps1`. Log nằm trong `logs\parking_monitor.log`; model debug phải tồn tại tại `models\yolo11n.pt`.

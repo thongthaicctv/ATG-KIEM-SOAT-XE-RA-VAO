@@ -56,6 +56,10 @@ class Settings:
     track_lost_grace_seconds: float = 5.0
     vehicle_polygon_overlap_threshold: float = 0.30
     stable_frames_after_reconnect: int = 20
+    session_track_match_max_anchor_distance: float = float(os.getenv("PARKING_SESSION_MATCH_MAX_ANCHOR_DISTANCE", "120"))
+    session_track_match_min_iou: float = float(os.getenv("PARKING_SESSION_MATCH_MIN_IOU", "0.10"))
+    session_track_match_min_size_ratio: float = float(os.getenv("PARKING_SESSION_MATCH_MIN_SIZE_RATIO", "0.60"))
+    session_track_match_max_size_ratio: float = float(os.getenv("PARKING_SESSION_MATCH_MAX_SIZE_RATIO", "1.67"))
     enable_motorcycles: bool = False
     detector_model: str = os.getenv("PARKING_DETECTOR_MODEL", str(ROOT_DIR / "models" / active_runtime_profile.model_filename))
     detector_device: str = os.getenv("PARKING_DETECTOR_DEVICE", active_runtime_profile.detector_device)

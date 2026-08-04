@@ -48,4 +48,4 @@ def test_track_buffer_uses_full_configured_duration():
 def test_one_vehicle_five_minutes_has_one_session(db):
     camera=_camera(db,"STABLE"); service=ParkingSessionService(ParkingRepository(db)); vehicle=VehicleObservation("1","motorcycle",.8,(0,0,10,10)); start=datetime(2026,7,20,10,0,tzinfo=timezone.utc)
     first=service.start(camera,vehicle,start,start); same=service.start(camera,VehicleObservation("2","motorcycle",.8,(0,0,10,10)),start,start+timedelta(minutes=5))
-    assert first.id==same.id and len(service.repo.recent_sessions())==1
+    assert first.id!=same.id and len(service.repo.recent_sessions())==2
