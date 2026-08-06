@@ -1,0 +1,72 @@
+2026-08-05 09:24:35,430 INFO root: Startup project_root=D:\PYTHON\ATG-KIEM-SOAT-XE-RA-VAO executable=D:\PYTHON\ATG-KIEM-SOAT-XE-RA-VAO\.venv\Scripts\python.exe python=3.10.11 cwd=D:\PYTHON\ATG-KIEM-SOAT-XE-RA-VAO entry_point=D:\PYTHON\ATG-KIEM-SOAT-XE-RA-VAO\run_app.py
+2026-08-05 09:24:35,430 INFO root: Runtime configuration resolved mode=benchmark device_configured=auto max_cameras=2 selected_cameras=GIAM_SAT_O_TO_1,GIAM_SAT_XE_MAY database_mode=DEBUG database_path=sqlite:///D:/PYTHON/ATG-KIEM-SOAT-XE-RA-VAO/data/runtime_debug/benchmark.db auto_scale=1 fallback_min_cameras=1
+2026-08-05 09:24:35,430 INFO root: System local time: 2026-08-05T09:24:35.430138+07:00; current UTC time: 2026-08-05T02:24:35.430138+00:00
+2026-08-05 09:24:35,507 INFO root: Database init
+2026-08-05 09:24:35,507 INFO app.services.detector: Detector config model=D:\PYTHON\ATG-KIEM-SOAT-XE-RA-VAO\models\yolo11n.pt exists=True confidence=0.40
+2026-08-05 09:24:36,243 INFO app.services.detector: AUTO_SELECTED_CUDA configured=auto resolved=cuda:0 cuda_available=True
+2026-08-05 09:24:36,243 INFO app.services.detector: Detector loaded model=D:\PYTHON\ATG-KIEM-SOAT-XE-RA-VAO\models\yolo11n.pt exists=True configured_device=auto resolved_device=cuda:0 gpu=NVIDIA T600 model_parameter_device=cpu model_parameter_dtype=torch.float32 model_instances=1 allocated_mib=0.0 reserved_mib=0.0 confidence=0.40
+2026-08-05 09:24:36,279 INFO camera.GIAM_SAT_XE_MAY: Worker config camera=GIAM_SAT_XE_MAY parking_confirm_seconds=5.0 exit_confirm_seconds=2.0 detection_grace_seconds=5.0 track_lost_seconds=3.0 zone_type=MOTORCYCLE_ZONE capacity=15
+2026-08-05 09:24:36,279 INFO camera.GIAM_SAT_O_TO_1: Worker config camera=GIAM_SAT_O_TO_1 parking_confirm_seconds=60.0 exit_confirm_seconds=60.0 detection_grace_seconds=10.0 track_lost_seconds=5.0 zone_type=CAR_ZONE capacity=4
+2026-08-05 09:24:36,279 INFO camera.GIAM_SAT_XE_MAY: Detector ready model=D:\PYTHON\ATG-KIEM-SOAT-XE-RA-VAO\models\yolo11n.pt device=cuda:0 half=False
+2026-08-05 09:24:36,279 INFO camera.GIAM_SAT_O_TO_1: Detector ready model=D:\PYTHON\ATG-KIEM-SOAT-XE-RA-VAO\models\yolo11n.pt device=cuda:0 half=False
+2026-08-05 09:24:38,971 INFO camera.GIAM_SAT_O_TO_1: First frame received shape=(1620, 2880, 3)
+2026-08-05 09:24:38,976 INFO camera.GIAM_SAT_XE_MAY: First frame received shape=(1620, 2880, 3)
+2026-08-05 09:24:39,065 INFO app.ui.main_window: Camera online camera=GIAM_SAT_O_TO_1 first_frame=true detector_ready=True
+2026-08-05 09:24:39,080 INFO app.ui.main_window: Camera online camera=GIAM_SAT_XE_MAY first_frame=true detector_ready=True
+2026-08-05 09:24:39,203 INFO app.ui.main_window: Pipeline telemetry camera=GIAM_SAT_XE_MAY capture_timestamp=2026-08-05T02:24:38.976311+00:00 inference_start=None inference_end=None preview_display_timestamp=61574.015000 ai_frame_age_ms=0.0 preview_frame_age_ms=187.0 configured_preview_fps=5.00 actual_preview_fps=0.00 dropped_capture_frames=0 dropped_preview_frames=0 queue_size=0 motorcycle=[] time_since_last_detection=-1.0 presence_ratio=0.00 candidate_elapsed=0.0 candidate_miss_elapsed=0.0
+2026-08-05 09:24:39,250 INFO app.ui.main_window: Pipeline telemetry camera=GIAM_SAT_O_TO_1 capture_timestamp=2026-08-05T02:24:38.971699+00:00 inference_start=None inference_end=None preview_display_timestamp=61574.062000 ai_frame_age_ms=0.0 preview_frame_age_ms=234.0 configured_preview_fps=5.00 actual_preview_fps=0.00 dropped_capture_frames=0 dropped_preview_frames=0 queue_size=0 motorcycle=[] time_since_last_detection=-1.0 presence_ratio=0.00 candidate_elapsed=0.0 candidate_miss_elapsed=0.0
+2026-08-05 09:24:42,477 INFO app.services.detector: FIRST_INFERENCE configured_device=cuda:0 resolved_device=cuda:0 result_device=cuda:0 duration_ms=3502.7 allocated_mib=42.0 reserved_mib=70.0 peak_mib=53.8
+2026-08-05 09:24:42,493 INFO app.services.detector: Detector telemetry original=2615x1251 inference=2615x1251 duration_ms=3515.9 raw=11 vehicles=5
+2026-08-05 09:24:42,493 INFO app.services.detector: Vehicle filtered details=[{'class_id': 0, 'class_name': 'person', 'reason': 'class_not_allowed'}, {'class_id': 0, 'class_name': 'person', 'reason': 'class_not_allowed'}, {'class_id': 0, 'class_name': 'person', 'reason': 'class_not_allowed'}, {'class_id': 0, 'class_name': 'person', 'reason': 'class_not_allowed'}, {'class_id': 0, 'class_name': 'person', 'reason': 'class_not_allowed'}, {'class_id': 0, 'class_name': 'person', 'reason': 'class_not_allowed'}]
+2026-08-05 09:24:42,503 INFO camera.GIAM_SAT_XE_MAY: Primary track selected track=1 overlap=1.000 inside=True
+2026-08-05 09:24:42,503 INFO camera.GIAM_SAT_XE_MAY: Tracker telemetry frame=1 detections=5 inputs=[(0.768, (1494, 716, 2011, 1169)), (0.721, (492, 970, 1470, 1611)), (0.327, (1846, 639, 2191, 1101)), (0.257, (1698, 658, 2179, 1102)), (0.208, (3, 395, 278, 819))] outputs=[('1', 1, 0), ('4', 1, 0), ('3', 1, 0), ('2', 1, 0), ('5', 1, 0)] configured_fps=4.00 actual_ai_fps=0.28 track_lost_seconds=3.00 calculated_track_buffer=12
+2026-08-05 09:24:42,507 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=0cfbc764ba254d3192dba6dc9f1c3ee2 track_id=1 reason=unmatched_stable_track
+2026-08-05 09:24:42,507 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=45275b9a142f4175b202f02580129304 track_id=2 reason=unmatched_stable_track
+2026-08-05 09:24:42,510 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=1e45524706954cc69c41822c936e961d track_id=3 reason=unmatched_stable_track
+2026-08-05 09:24:42,510 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=f511a7d93bf249579bceba854ed24dc1 track_id=4 reason=unmatched_stable_track
+2026-08-05 09:24:42,570 INFO camera.GIAM_SAT_O_TO_1: Tracker telemetry frame=1 detections=5 inputs=[(0.652, (324, 562, 471, 822)), (0.526, (491, 527, 997, 631)), (0.449, (683, 527, 976, 633)), (0.307, (500, 527, 727, 606)), (0.207, (325, 1126, 401, 1266))] outputs=[('1', 1, 0), ('4', 1, 0), ('3', 1, 0), ('2', 1, 0), ('5', 1, 0)] configured_fps=4.00 actual_ai_fps=0.28 track_lost_seconds=5.00 calculated_track_buffer=20
+2026-08-05 09:24:43,134 INFO app.ui.main_window: Track associated to existing runtime vehicle_instance_id=1e45524706954cc69c41822c936e961d new_track=6 session=None
+2026-08-05 09:24:43,453 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=cecc213851854684a96a33838fbbe00e track_id=3 reason=unmatched_stable_track
+2026-08-05 09:24:44,395 INFO app.ui.main_window: Detection ignored camera=GIAM_SAT_XE_MAY track=9 raw_class=motorcycle reason=IGNORE_ZONE bbox=(215.04232788085938, 1264.063232421875, 641.5320434570312, 1612.4173583984375) anchor=(0.14871082835727267, 0.9953193570360725)
+2026-08-05 09:24:44,819 INFO camera.GIAM_SAT_O_TO_1: Primary track selected track=9 overlap=0.507 inside=True
+2026-08-05 09:24:44,820 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=21af77a7a2ef41348381ea1317f905af track_id=9 reason=unmatched_stable_track
+2026-08-05 09:24:45,033 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=9e45d5ab810c42afa72e5e3cb3bef411 track_id=11 reason=unmatched_stable_track
+2026-08-05 09:24:45,033 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=1fd4ae5c23eb4e1fa432c3310af9713f track_id=12 reason=unmatched_stable_track
+2026-08-05 09:24:45,039 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=c7f2a4504f084a1c8728f3c82f5b6f51 track_id=13 reason=unmatched_stable_track
+2026-08-05 09:24:45,716 INFO camera.GIAM_SAT_XE_MAY: Primary track selected track=6 overlap=1.000 inside=True
+2026-08-05 09:24:47,657 INFO app.services.parking_session_service: Session started and committed session=1-20260805-000001 vehicle_instance_id=45275b9a142f4175b202f02580129304 track=2 idempotency_key=2:45275b9a142f4175b202f02580129304
+2026-08-05 09:24:47,714 INFO app.ui.main_window: Parking session started camera=GIAM_SAT_XE_MAY session=1-20260805-000001 runtime=45275b9a142f4175b202f02580129304 track=2
+2026-08-05 09:24:47,715 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=45275b9a142f4175b202f02580129304 state=OCCUPIED session=1-20260805-000001
+2026-08-05 09:24:47,782 INFO app.services.parking_session_service: Session started and committed session=1-20260805-000002 vehicle_instance_id=1e45524706954cc69c41822c936e961d track=6 idempotency_key=2:1e45524706954cc69c41822c936e961d
+2026-08-05 09:24:47,851 INFO app.ui.main_window: Parking session started camera=GIAM_SAT_XE_MAY session=1-20260805-000002 runtime=1e45524706954cc69c41822c936e961d track=6
+2026-08-05 09:24:47,852 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=1e45524706954cc69c41822c936e961d state=OCCUPIED session=1-20260805-000002
+2026-08-05 09:24:48,899 INFO camera.GIAM_SAT_O_TO_1: Primary track selected track=3 overlap=0.244 inside=True
+2026-08-05 09:24:48,899 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=89abf76fd340465c869142a063e80bf7 track_id=3 reason=unmatched_stable_track
+2026-08-05 09:24:48,899 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=9f3e6a183848436193f8fab2fa5d5b21 track_id=11 reason=unmatched_stable_track
+2026-08-05 09:24:49,418 INFO camera.GIAM_SAT_O_TO_1: Primary track selected track=16 overlap=0.273 inside=True
+2026-08-05 09:24:49,419 INFO app.ui.main_window: Track associated to existing runtime vehicle_instance_id=89abf76fd340465c869142a063e80bf7 new_track=16 session=None
+2026-08-05 09:24:49,756 INFO app.services.parking_session_service: Session started and committed session=1-20260805-000003 vehicle_instance_id=cecc213851854684a96a33838fbbe00e track=3 idempotency_key=2:cecc213851854684a96a33838fbbe00e
+2026-08-05 09:24:49,843 INFO app.ui.main_window: Parking session started camera=GIAM_SAT_XE_MAY session=1-20260805-000003 runtime=cecc213851854684a96a33838fbbe00e track=3
+2026-08-05 09:24:49,849 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=cecc213851854684a96a33838fbbe00e state=OCCUPIED session=1-20260805-000003
+2026-08-05 09:24:49,944 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=40ea27f7da9744449b4067f19258f80d track_id=3 reason=unmatched_stable_track
+2026-08-05 09:24:50,240 INFO app.services.parking_session_service: Session started and committed session=1-20260805-000004 vehicle_instance_id=1fd4ae5c23eb4e1fa432c3310af9713f track=12 idempotency_key=2:1fd4ae5c23eb4e1fa432c3310af9713f
+2026-08-05 09:24:50,333 INFO app.ui.main_window: Parking session started camera=GIAM_SAT_XE_MAY session=1-20260805-000004 runtime=1fd4ae5c23eb4e1fa432c3310af9713f track=12
+2026-08-05 09:24:50,334 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=1fd4ae5c23eb4e1fa432c3310af9713f state=OCCUPIED session=1-20260805-000004
+2026-08-05 09:24:50,351 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=cecc213851854684a96a33838fbbe00e state=OCCUPIED session=1-20260805-000003
+2026-08-05 09:24:50,850 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=cecc213851854684a96a33838fbbe00e state=OCCUPIED session=1-20260805-000003
+2026-08-05 09:24:52,498 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=1fd4ae5c23eb4e1fa432c3310af9713f state=OCCUPIED session=1-20260805-000004
+2026-08-05 09:24:54,202 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=cecc213851854684a96a33838fbbe00e state=OCCUPIED session=1-20260805-000003
+2026-08-05 09:24:55,225 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=cecc213851854684a96a33838fbbe00e state=OCCUPIED session=1-20260805-000003
+2026-08-05 09:24:58,493 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=cecc213851854684a96a33838fbbe00e state=OCCUPIED session=1-20260805-000003
+2026-08-05 09:24:59,722 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=cecc213851854684a96a33838fbbe00e state=OCCUPIED session=1-20260805-000003
+2026-08-05 09:24:59,748 INFO app.ui.main_window: Track associated to existing runtime vehicle_instance_id=1fd4ae5c23eb4e1fa432c3310af9713f new_track=15 session=1-20260805-000004
+2026-08-05 09:24:59,774 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=1fd4ae5c23eb4e1fa432c3310af9713f state=OCCUPIED session=1-20260805-000004
+2026-08-05 09:25:00,367 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=cecc213851854684a96a33838fbbe00e state=OCCUPIED session=1-20260805-000003
+2026-08-05 09:25:03,459 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=fdc9dd0dbcf24dcc8ea9a41981df9bdf track_id=19 reason=unmatched_stable_track
+2026-08-05 09:25:05,209 INFO camera.GIAM_SAT_O_TO_1: Primary track selected track=13 overlap=0.306 inside=True
+2026-08-05 09:25:05,231 INFO app.ui.main_window: Vehicle runtime created vehicle_instance_id=6d6e8afac73f4a8aac2ed3a282ca7818 track_id=13 reason=unmatched_stable_track
+2026-08-05 09:25:06,444 INFO app.ui.main_window: Detection ignored camera=GIAM_SAT_XE_MAY track=22 raw_class=motorcycle reason=IGNORE_ZONE bbox=(254.47262573242188, 1262.9327392578125, 694.3052368164062, 1613.3126220703125) anchor=(0.1647183789147271, 0.9958719889322917)
+2026-08-05 09:25:08,163 INFO app.services.parking_session_service: Session completed and committed session=1-20260805-000004 previous_status=ACTIVE new_status=COMPLETED left_at=2026-08-05 02:25:07.959776 duration_seconds=17
+2026-08-05 09:25:08,707 INFO app.services.parking_session_service: Session started and committed session=1-20260805-000005 vehicle_instance_id=fdc9dd0dbcf24dcc8ea9a41981df9bdf track=19 idempotency_key=2:fdc9dd0dbcf24dcc8ea9a41981df9bdf
+2026-08-05 09:25:08,788 INFO app.ui.main_window: Parking session started camera=GIAM_SAT_XE_MAY session=1-20260805-000005 runtime=fdc9dd0dbcf24dcc8ea9a41981df9bdf track=19
+2026-08-05 09:25:08,788 INFO app.ui.main_window: Vehicle state transition camera=GIAM_SAT_XE_MAY runtime=fdc9dd0dbcf24dcc8ea9a41981df9bdf state=OCCUPIED session=1-20260805-000005

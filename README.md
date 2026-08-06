@@ -192,3 +192,35 @@ FFmpeg RTSP reader
 ## Các phase chưa triển khai
 
 OCR/biển số (Phase 2), danh sách xe đăng ký (Phase 3), phát hiện sai quy cách (Phase 4), báo cáo Excel nâng cao (Phase 5), vận hành 24-72 giờ/backup (Phase 6), đóng gói EXE và tài liệu triển khai (Phase 7).
+
+## Phase 1.4B - Khởi động và debug nhiều camera
+
+Entry point duy nhất:
+
+```powershell
+.\.venv\Scripts\python.exe .\run_app.py
+```
+
+Chạy không tham số sẽ mở hộp thoại chọn Normal, Debug hoặc Benchmark. Debug dùng database, log và snapshot riêng; danh sách camera chỉ tồn tại trong runtime và không sửa `enabled` trong database chính.
+
+```powershell
+# Debug hai camera
+.\.venv\Scripts\python.exe .\run_app.py --mode debug --device auto --max-cameras 2 `
+  --camera GIAM_SAT_O_TO_1 --camera GIAM_SAT_XE_MAY
+
+# Benchmark tự động
+.\.venv\Scripts\python.exe .\run_app.py --mode benchmark --device auto --auto-scale `
+  --fallback-min-cameras 2 --camera GIAM_SAT_O_TO_1 --camera GIAM_SAT_XE_MAY
+```
+
+`device=auto` chọn CUDA khi PyTorch nhận CUDA, ngược lại chọn CPU. `device=cuda:0` bị từ chối rõ ràng khi CUDA không khả dụng; chương trình không tự cài PyTorch/CUDA.
+
+## Phase 1.4C - Physical Zone và Vehicle Identity Fusion
+
+- Database phân tách `physical_zones`, geometry version, camera calibration, vehicle identity, observation và parking session.
+- Camera cũ được migration an toàn thành `INDEPENDENT_ZONE`; polygon gốc và lịch sử không bị xóa.
+- `SHARED_ZONE` dùng canonical coordinates và global one-to-one association; observation trùng từ camera chồng lấn không trở thành identity mới.
+- Thay đổi geometry luôn qua preview, backup, transaction remap và activate version. Raw bbox/anchor, thời gian và session ID không bị ghi đè.
+- Interface biển số Phase 1.4C trả `NOT_AVAILABLE`; chưa chạy hoặc giả lập OCR.
+- Audit phiên nghi trùng chỉ chạy preview: `python .\scripts\audit_virtual_sessions.py`.
+- Capacity dùng `confirmed_occupancy_count` từ observation còn mới; Candidate, LEAVING, Recovery và open session DB chỉ hiển thị riêng, không được cộng vào số xe đang chiếm chỗ.

@@ -37,6 +37,7 @@ class Camera(Base, TimestampMixin):
     exit_confirm_seconds: Mapped[float] = mapped_column(Float, default=3.0)
     track_lost_grace_seconds: Mapped[float] = mapped_column(Float, default=5.0)
     detection_miss_grace_seconds: Mapped[float] = mapped_column(Float, default=5.0)
+    occupancy_observation_grace_seconds: Mapped[float] = mapped_column(Float, default=2.0)
     rotation_degrees: Mapped[int] = mapped_column(Integer, default=0)
     polygon_points: Mapped[list[list[float]] | None] = mapped_column(JSON, nullable=True)
     ignore_zones: Mapped[list[dict[str,Any]] | None] = mapped_column(JSON, nullable=True)
@@ -47,12 +48,73 @@ class Camera(Base, TimestampMixin):
     last_online_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class PhysicalZone(Base, TimestampMixin):
+    __tablename__="physical_zones"
+    id: Mapped[int]=mapped_column(primary_key=True); zone_code: Mapped[str]=mapped_column(String(64),unique=True,index=True); zone_name: Mapped[str]=mapped_column(String(160))
+    zone_mode: Mapped[str]=mapped_column(String(32)); zone_type: Mapped[str]=mapped_column(String(32)); capacity: Mapped[int]=mapped_column(Integer,default=1)
+    coordinate_mode: Mapped[str]=mapped_column(String(32),default="NORMALIZED"); canonical_width: Mapped[float|None]=mapped_column(Float); canonical_height: Mapped[float|None]=mapped_column(Float); coordinate_unit: Mapped[str]=mapped_column(String(16),default="normalized")
+    active_geometry_version_id: Mapped[int|None]=mapped_column(Integer,nullable=True); enabled: Mapped[bool]=mapped_column(Boolean,default=True)
+
+
+class ZoneGeometryVersion(Base):
+    __tablename__="zone_geometry_versions"
+    id: Mapped[int]=mapped_column(primary_key=True); physical_zone_id: Mapped[int]=mapped_column(ForeignKey("physical_zones.id"),index=True); version_number: Mapped[int]=mapped_column(Integer)
+    canonical_polygon_json: Mapped[list[list[float]]]=mapped_column(JSON); previous_version_id: Mapped[int|None]=mapped_column(ForeignKey("zone_geometry_versions.id")); change_type: Mapped[str]=mapped_column(String(32),default="INITIAL"); change_reason: Mapped[str|None]=mapped_column(Text)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utc_now); created_by: Mapped[str|None]=mapped_column(String(96)); activated_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True)); is_active: Mapped[bool]=mapped_column(Boolean,default=False)
+    __table_args__=(UniqueConstraint("physical_zone_id","version_number"),)
+
+
+class ZoneCamera(Base):
+    __tablename__="zone_cameras"
+    id: Mapped[int]=mapped_column(primary_key=True); physical_zone_id: Mapped[int]=mapped_column(ForeignKey("physical_zones.id"),index=True); camera_id: Mapped[int]=mapped_column(ForeignKey("cameras.id"),index=True)
+    camera_role: Mapped[str]=mapped_column(String(32),default="PRIMARY"); enabled: Mapped[bool]=mapped_column(Boolean,default=True); priority: Mapped[int]=mapped_column(Integer,default=1); added_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utc_now); removed_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+    __table_args__=(UniqueConstraint("physical_zone_id","camera_id"),)
+
+
+class CameraZoneCalibration(Base):
+    __tablename__="camera_zone_calibrations"
+    id: Mapped[int]=mapped_column(primary_key=True); zone_camera_id: Mapped[int]=mapped_column(ForeignKey("zone_cameras.id"),index=True); geometry_version_id: Mapped[int]=mapped_column(ForeignKey("zone_geometry_versions.id"),index=True)
+    calibration_type: Mapped[str]=mapped_column(String(32)); control_points_image_json: Mapped[list|None]=mapped_column(JSON); control_points_zone_json: Mapped[list|None]=mapped_column(JSON); homography_matrix_json: Mapped[list|None]=mapped_column(JSON); inverse_homography_matrix_json: Mapped[list|None]=mapped_column(JSON)
+    visible_polygon_image_json: Mapped[list|None]=mapped_column(JSON); visible_polygon_zone_json: Mapped[list|None]=mapped_column(JSON); reprojection_error: Mapped[float|None]=mapped_column(Float); calibration_status: Mapped[str]=mapped_column(String(32),default="NEEDS_REVIEW"); created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utc_now); activated_at: Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+
+
+class VirtualSlot(Base):
+    __tablename__="virtual_slots"
+    id: Mapped[int]=mapped_column(primary_key=True); slot_id: Mapped[str]=mapped_column(String(64)); physical_zone_id: Mapped[int]=mapped_column(ForeignKey("physical_zones.id"),index=True); geometry_version_id: Mapped[int]=mapped_column(ForeignKey("zone_geometry_versions.id")); slot_polygon: Mapped[list]=mapped_column(JSON); slot_anchor: Mapped[list]=mapped_column(JSON); vehicle_family: Mapped[str|None]=mapped_column(String(32)); capacity: Mapped[int]=mapped_column(Integer,default=1); enabled: Mapped[bool]=mapped_column(Boolean,default=True)
+    __table_args__=(UniqueConstraint("physical_zone_id","geometry_version_id","slot_id"),)
+
+
+class VehicleIdentity(Base):
+    __tablename__="vehicle_identities"
+    id: Mapped[int]=mapped_column(primary_key=True); vehicle_instance_id: Mapped[str]=mapped_column(String(36),unique=True,index=True); physical_zone_id: Mapped[int]=mapped_column(ForeignKey("physical_zones.id"),index=True)
+    vehicle_family: Mapped[str|None]=mapped_column(String(32)); stabilized_vehicle_class: Mapped[str|None]=mapped_column(String(32)); stabilized_color: Mapped[str|None]=mapped_column(String(32)); color_confidence: Mapped[float|None]=mapped_column(Float); appearance_signature: Mapped[dict|None]=mapped_column(JSON); plate_number: Mapped[str|None]=mapped_column(String(32)); plate_confidence: Mapped[float|None]=mapped_column(Float); identity_confidence: Mapped[float|None]=mapped_column(Float); identity_state: Mapped[str]=mapped_column(String(32),default="ACTIVE"); created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utc_now); last_seen_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utc_now)
+
+
+class VehicleObservationRecord(Base):
+    __tablename__="vehicle_observations"
+    id: Mapped[int]=mapped_column(primary_key=True); vehicle_identity_id: Mapped[int|None]=mapped_column(ForeignKey("vehicle_identities.id"),index=True); parking_session_id: Mapped[int|None]=mapped_column(ForeignKey("parking_sessions.id"),index=True); physical_zone_id: Mapped[int]=mapped_column(ForeignKey("physical_zones.id"),index=True); camera_id: Mapped[int]=mapped_column(ForeignKey("cameras.id"),index=True)
+    tracker_generation: Mapped[int]=mapped_column(Integer,default=0); track_id: Mapped[str]=mapped_column(String(64)); observed_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=utc_now); raw_class: Mapped[str|None]=mapped_column(String(32)); stabilized_class: Mapped[str|None]=mapped_column(String(32)); class_confidence: Mapped[float|None]=mapped_column(Float)
+    bbox_image_json: Mapped[list|None]=mapped_column(JSON); anchor_image_json: Mapped[list|None]=mapped_column(JSON); bbox_normalized_json: Mapped[list|None]=mapped_column(JSON); anchor_normalized_json: Mapped[list|None]=mapped_column(JSON); zone_x: Mapped[float|None]=mapped_column(Float); zone_y: Mapped[float|None]=mapped_column(Float); virtual_u: Mapped[float|None]=mapped_column(Float); virtual_v: Mapped[float|None]=mapped_column(Float); virtual_slot_id: Mapped[str|None]=mapped_column(String(64)); geometry_version_id: Mapped[int|None]=mapped_column(ForeignKey("zone_geometry_versions.id"))
+    color: Mapped[str|None]=mapped_column(String(32)); color_confidence: Mapped[float|None]=mapped_column(Float); appearance_signature: Mapped[dict|None]=mapped_column(JSON); plate_number_observed: Mapped[str|None]=mapped_column(String(32)); plate_confidence_observed: Mapped[float|None]=mapped_column(Float); observation_quality: Mapped[float|None]=mapped_column(Float); is_ignored: Mapped[bool]=mapped_column(Boolean,default=False); ignore_reason: Mapped[str|None]=mapped_column(String(64)); remap_status: Mapped[str|None]=mapped_column(String(32))
+    __table_args__=(UniqueConstraint("camera_id","tracker_generation","track_id","observed_at",name="uq_observation_track_time"),)
+
+
 class ParkingSession(Base, TimestampMixin):
     __tablename__ = "parking_sessions"
     __table_args__ = (UniqueConstraint("session_code"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     session_code: Mapped[str] = mapped_column(String(96), unique=True, index=True)
     camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id"), index=True)
+    physical_zone_id: Mapped[int | None] = mapped_column(ForeignKey("physical_zones.id"), nullable=True, index=True)
+    vehicle_identity_id: Mapped[int | None] = mapped_column(ForeignKey("vehicle_identities.id"), nullable=True, index=True)
+    primary_camera_id: Mapped[int | None] = mapped_column(ForeignKey("cameras.id"), nullable=True)
+    dominant_color: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    plate_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    virtual_slot_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    latest_zone_x: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latest_zone_y: Mapped[float | None] = mapped_column(Float, nullable=True)
+    geometry_version_started: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    geometry_version_latest: Mapped[int | None] = mapped_column(Integer, nullable=True)
     parking_position_code: Mapped[str] = mapped_column(String(64), index=True)
     vehicle_class: Mapped[str | None] = mapped_column(String(32))
     current_track_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -88,7 +150,7 @@ class ParkingSession(Base, TimestampMixin):
     enter_snapshot_path: Mapped[str | None] = mapped_column(Text)
     parked_snapshot_path: Mapped[str | None] = mapped_column(Text)
     exit_snapshot_path: Mapped[str | None] = mapped_column(Text)
-    camera: Mapped[Camera] = relationship()
+    camera: Mapped[Camera] = relationship(foreign_keys=[camera_id])
     track_links: Mapped[list[VehicleTrackLink]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
 

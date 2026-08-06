@@ -9,6 +9,7 @@ from uuid import uuid4
 from app.services.polygon_engine import VehicleObservation
 from app.services.session_vehicle_matcher import is_same_session_vehicle, vehicle_class_family
 from app.services.vehicle_candidate_validator import VehicleCandidateValidator,ignore_zone_match
+from app.services.zone_occupancy import calculate_zone_occupancy
 
 
 ZONE_CLASSES = {
@@ -109,7 +110,7 @@ class MultiVehicleAssociationService:
 
 class ZoneRuntimeState:
     def __init__(self,camera,stable_frames_after_reconnect=1,minimum_candidate_frames=3):
-        self.camera=camera; self.camera_id=camera.id; self.zone_type=camera.zone_type; self.capacity=max(1,int(camera.capacity)); self.parking_confirm_seconds=float(camera.parking_confirm_seconds); self.exit_confirm_seconds=float(camera.exit_confirm_seconds); self.detection_miss_grace_seconds=float(camera.detection_miss_grace_seconds); self.track_lost_grace_seconds=float(camera.track_lost_grace_seconds); self.stable_frames_after_reconnect=max(1,int(stable_frames_after_reconnect)); self.minimum_candidate_frames=max(1,int(minimum_candidate_frames)); self.stable_frames=0; self.online=False; self.vehicles={}; self.association=MultiVehicleAssociationService(); self.validator=VehicleCandidateValidator(); self.ignored=[]; self.ignored_track_ids_logged=set(); self.reconnect_generation=0; self.recovery_active=False
+        self.camera=camera; self.camera_id=camera.id; self.zone_type=camera.zone_type; self.capacity=max(1,int(camera.capacity)); self.parking_confirm_seconds=float(camera.parking_confirm_seconds); self.exit_confirm_seconds=float(camera.exit_confirm_seconds); self.detection_miss_grace_seconds=float(camera.detection_miss_grace_seconds); self.track_lost_grace_seconds=float(camera.track_lost_grace_seconds); self.occupancy_observation_grace_seconds=float(getattr(camera,"occupancy_observation_grace_seconds",2.0)); self.stable_frames_after_reconnect=max(1,int(stable_frames_after_reconnect)); self.minimum_candidate_frames=max(1,int(minimum_candidate_frames)); self.stable_frames=0; self.online=False; self.vehicles={}; self.association=MultiVehicleAssociationService(); self.validator=VehicleCandidateValidator(); self.ignored=[]; self.ignored_track_ids_logged=set(); self.reconnect_generation=0; self.recovery_active=False; self.last_tick=0.0
 
     def restore_session(self,session):
         runtime=VehicleRuntimeState(runtime_id=session.vehicle_instance_id or uuid4().hex,state="RECOVERY_PENDING",session_id=session.id,session_code=session.session_code,current_track_id=session.current_track_id,vehicle_class=session.stabilized_vehicle_class or session.vehicle_class or "unknown",first_seen_at=session.entered_at,parked_at=session.parked_at,last_seen_at=session.last_seen_at or session.last_confirmed_seen_at,recovery_session=session)
@@ -121,7 +122,7 @@ class ZoneRuntimeState:
             if runtime.session_id is not None: runtime.state="RECOVERY_PENDING"; runtime.missing_tick=None
 
     def process(self,candidates,now,tick):
-        self.online=True; self.stable_frames+=1; actions=[]
+        self.online=True; self.last_tick=float(tick); self.stable_frames+=1; actions=[]
         eligible=[c for c in candidates if accepts_vehicle(self.zone_type,c.vehicle_class) and c.time_since_update==0]; self.ignored=[]
         for candidate in eligible:
             if ignore_zone_match(candidate,getattr(self.camera,"ignore_zones",None),getattr(self.camera,"ignore_zone_overlap_threshold",.30)): candidate.ignored=True; candidate.ignore_reason="IGNORE_ZONE"; self.ignored.append(candidate)
@@ -155,16 +156,12 @@ class ZoneRuntimeState:
         if self.recovery_active and self.stable_frames>=self.stable_frames_after_reconnect: self.recovery_active=False
         return actions
 
+    def occupancy_snapshot(self,open_database_session_count=0): return calculate_zone_occupancy(self.vehicles.values(),self.last_tick,self.capacity,self.zone_type,occupancy_observation_grace_seconds=self.occupancy_observation_grace_seconds,open_database_session_count=open_database_session_count,ignored_detection_count=len(self.ignored),frame_health=self.online)
     @property
-    def parked_count(self): return sum(v.session_id is not None for v in self.vehicles.values())
+    def parked_count(self): return self.occupancy_snapshot().confirmed_occupancy_count
     @property
     def candidate_count(self): return sum(v.state=="CANDIDATE" for v in self.vehicles.values())
     @property
     def state(self):
         if not self.online: return "CAMERA_OFFLINE"
-        count=self.parked_count
-        if count>self.capacity: return "OVER_CAPACITY"
-        if count==self.capacity: return "FULL"
-        if count: return "OCCUPIED"
-        if self.candidate_count: return "VEHICLE_CANDIDATE"
-        return "EMPTY"
+        return self.occupancy_snapshot().zone_state

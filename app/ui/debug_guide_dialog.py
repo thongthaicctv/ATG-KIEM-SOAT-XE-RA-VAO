@@ -14,6 +14,7 @@ COMMANDS = {
     "setup": "powershell -ExecutionPolicy Bypass -File .\\scripts\\setup-dev.ps1",
     "check": "powershell -ExecutionPolicy Bypass -File .\\scripts\\check-environment.ps1",
     "debug": "powershell -ExecutionPolicy Bypass -File .\\config\\debug-1cam.ps1",
+    "debug_2zones": "powershell -ExecutionPolicy Bypass -File .\\config\\debug-2zones.ps1 -CarCameraCode <MA_CAM_OTO> -MotorcycleCameraCode <MA_CAM_XE_MAY>",
     "normal": ".\\.venv\\Scripts\\python.exe .\\run_app.py",
     "test": ".\\.venv\\Scripts\\python.exe -m pytest -v",
 }

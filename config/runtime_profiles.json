@@ -1,0 +1,13 @@
+{
+  "normal": {"max_cameras": 10, "device": "auto", "auto_scale": false},
+  "debug_1cam": {"max_cameras": 1, "device": "auto", "auto_scale": false},
+  "debug_2cams": {"max_cameras": 2, "device": "auto", "auto_scale": false},
+  "debug_multi": {"max_cameras": 10, "device": "auto", "auto_scale": false},
+  "benchmark_auto": {
+    "max_cameras": 10, "device": "auto", "auto_scale": true,
+    "warmup_seconds": 60, "stable_test_seconds_per_step": 180,
+    "overload_confirm_seconds": 30, "recovery_observe_seconds": 60,
+    "cooldown_seconds": 60,
+    "thresholds": {"cpu_percent": 85, "ram_percent": 85, "vram_percent": 85, "ai_frame_age_ms": 1000, "actual_fps_ratio": 0.70, "queue_size": 1}
+  }
+}

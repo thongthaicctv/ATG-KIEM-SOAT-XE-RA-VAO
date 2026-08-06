@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import os
 import platform
+import subprocess
 import sys
 from pathlib import Path
 
@@ -43,7 +44,26 @@ def collect_environment(load_model: bool = False) -> tuple[dict[str, object], li
     for path in (DATA_DIR, LOG_DIR, SNAPSHOT_DIR):
         if not _writable(path): errors.append(f"PATH_NOT_WRITABLE: {path}")
     torch = modules.get("torch")
+    torch_cuda_build = getattr(getattr(torch, "version", None), "cuda", None)
     cuda = bool(torch and torch.cuda.is_available())
+    cuda_count = int(torch.cuda.device_count()) if torch else 0
+    gpu_name = torch.cuda.get_device_name(0) if cuda else "-"
+    capability = ".".join(map(str, torch.cuda.get_device_capability(0))) if cuda else "-"
+    gpu_total_mib = gpu_free_mib = driver_version = "-"
+    nvidia_smi_status = "NVIDIA_DRIVER_ERROR"
+    try:
+        query = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version,memory.total,memory.free", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5, check=True)
+        fields = [item.strip() for item in query.stdout.splitlines()[0].split(",")]
+        gpu_name, driver_version, gpu_total_mib, gpu_free_mib = fields[:4]
+        nvidia_smi_status = "GPU_FOUND"
+    except (OSError, subprocess.SubprocessError, IndexError, ValueError):
+        pass
+    if not torch: cuda_status = "TORCH_NOT_INSTALLED"
+    elif torch_cuda_build is None: cuda_status = "PYTORCH_CPU_ONLY"
+    elif not cuda: cuda_status = "CUDA_RUNTIME_UNAVAILABLE"
+    else: cuda_status = "CUDA_READY"
+    if settings.detector_device.startswith("cuda") and cuda_status != "CUDA_READY":
+        errors.append(cuda_status)
     database_path = settings.database_url.removeprefix("sqlite:///") if settings.database_url.startswith("sqlite:///") else settings.database_url
     info = {
         "project_root": str(ROOT_DIR), "system_python": str(Path(sys.base_prefix) / "python.exe"), "venv_python": sys.executable,
@@ -51,7 +71,10 @@ def collect_environment(load_model: bool = False) -> tuple[dict[str, object], li
         "runtime_dependencies": not any(e.startswith(("IMPORT_PySide6", "IMPORT_cv2", "IMPORT_sqlalchemy", "IMPORT_numpy")) for e in errors),
         "ai_dependencies": not any(e.startswith(("IMPORT_torch", "IMPORT_ultralytics")) for e in errors),
         "test_dependencies": not any(e.startswith(("IMPORT_pytest", "IMPORT_pytestqt")) for e in errors),
-        "torch_version": getattr(torch, "__version__", "-"), "cuda_available": cuda,
+        "torch_version": getattr(torch, "__version__", "-"), "torch_cuda_build": torch_cuda_build,
+        "cuda_status": cuda_status, "cuda_available": cuda, "cuda_device_count": cuda_count,
+        "cuda_device_name": gpu_name, "cuda_capability": capability, "nvidia_smi_status": nvidia_smi_status,
+        "nvidia_driver": driver_version, "gpu_total_mib": gpu_total_mib, "gpu_free_mib": gpu_free_mib,
         "ultralytics_version": getattr(modules.get("ultralytics"), "__version__", "-"),
         "model_path": str(model), "model_exists": model.is_file(), "device": settings.detector_device,
         "half": settings.detector_half, "max_cameras": settings.max_cameras, "database_path": database_path,

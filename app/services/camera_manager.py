@@ -14,7 +14,7 @@ def preview_interval_ms(preview_fps):
 class CameraManager(QObject):
     frame_ready=Signal(int,object,object); preview_frame=Signal(int,object,object); status_changed=Signal(int,bool,str); detector_error=Signal(int,str); error=Signal(int,str)
     def __init__(self,detector,parent=None,max_cameras=10,preview_fps=5.0):
-        super().__init__(parent); self.detector=detector; self.max_cameras=max(1,int(max_cameras)); self.items={}; self.preview_sequences={}; self.preview_timers={}; self.last_preview_emit={}
+        super().__init__(parent); self.detector=detector; self.max_cameras=max(1,int(max_cameras)); self.items={}; self.preview_sequences={}; self.preview_timers={}; self.last_preview_emit={}; self.suspended={}
     def start_camera(self,camera):
         self.stop_camera(camera.id)
         if len(self.items)>=self.max_cameras:
@@ -35,6 +35,11 @@ class CameraManager(QObject):
             thread,worker=item; worker.stop(); thread.quit(); thread.wait(3000)
     def stop_all(self):
         for camera_id in list(self.items): self.stop_camera(camera_id)
+    def suspend_camera(self,camera,reason="SUSPENDED_BY_RESOURCE_GUARD"):
+        """Stop capture/AI only; deliberately emits no business offline/PARK_END event."""
+        self.stop_camera(camera.id); self.suspended[camera.id]=reason; return reason
+    def resume_camera(self,camera):
+        self.suspended.pop(camera.id,None); return self.start_camera(camera)
     def update_preview_fps(self,camera_id,preview_fps):
         interval=preview_interval_ms(preview_fps)
         item=self.items.get(camera_id)
