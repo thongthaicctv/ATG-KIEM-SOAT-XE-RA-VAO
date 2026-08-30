@@ -14,3 +14,10 @@ backup/
 !models/.gitkeep
 !snapshots/.gitkeep
 !config/.gitkeep
+# Runtime A/B and benchmark outputs
+data/runtime_ab/
+reports/benchmark/
+reports/runtime_ab/
+
+# Local cross-check audit
+reports/session_audit/crosscheck_audit_*.md
