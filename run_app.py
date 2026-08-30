@@ -45,6 +45,17 @@ def prepare_debug_database(config: RuntimeConfig):
     subprocess.run(command,cwd=PROJECT_ROOT,check=True)
 
 
+def ensure_detector_model(settings) -> str | None:
+    """Kiểm tra sớm ở entry layer: file model đã resolve (qua profile/Settings) có tồn tại
+    trên đĩa hay không. Trả về thông báo lỗi an toàn (không RTSP/credential) nếu thiếu, None
+    nếu hợp lệ. Chạy TRƯỚC khi Settings/detector có cơ hội gọi Ultralytics YOLO(...), vì
+    YOLO() có thể tự tải model từ Internet khi tên file khớp một model chính thức."""
+    model_path = Path(settings.detector_model) if settings.detector_model else None
+    if not model_path or not model_path.is_file():
+        return f"DETECTOR_MODEL_NOT_FOUND: {model_path}"
+    return None
+
+
 def main(argv=None):
     raw=list(sys.argv[1:] if argv is None else argv); args=parser().parse_args(raw); incomplete_selection=args.mode in ("debug","benchmark") and not args.camera
     show_dialog=not args.no_startup_dialog and (not raw or args.mode is None or incomplete_selection)
@@ -54,8 +65,12 @@ def main(argv=None):
         print("DETECTOR_CUDA_UNAVAILABLE: CUDA không khả dụng; hãy chọn auto/cpu hoặc cài PyTorch CUDA thủ công.",file=sys.stderr); return 2
     config.apply_environment(PROJECT_ROOT); prepare_debug_database(config)
     from app.core.config import Settings
+    settings=Settings()
+    model_error=ensure_detector_model(settings)
+    if model_error:
+        print(model_error,file=sys.stderr); return 3
     from app.main import main as app_main
-    settings=Settings(); return app_main(settings)
+    return app_main(settings)
 
 
 if __name__=="__main__": raise SystemExit(main())

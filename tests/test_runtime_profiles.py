@@ -15,6 +15,7 @@ def test_production_profile_targets_ten_cameras_and_cuda():
     assert profile.max_cameras == 10
     assert profile.detector_device == "cuda"
     assert profile.detector_half is True
+    assert profile.model_filename == "yolo11s.pt"
     assert profile.preview_fps < RUNTIME_PROFILES["debug_1cam"].preview_fps
 
 

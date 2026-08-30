@@ -26,12 +26,15 @@ class RuntimeConfig:
         db = self.database_path or (root / "data" / "parking.db" if self.mode == "normal" else root / "data" / "runtime_debug" / ("benchmark.db" if self.mode == "benchmark" else f"debug_{self.max_cameras}cams.db"))
         db.parent.mkdir(parents=True, exist_ok=True)
         scope = "production" if self.mode == "normal" else ("benchmark" if self.mode == "benchmark" else f"debug_{self.max_cameras}cams")
+        # PARKING_DETECTOR_MODEL/_HALF/_PROCESSING_FPS/... KHÔNG được set ở đây:
+        # RUNTIME_PROFILES[mode_profile] (app/core/config.py) là nguồn sự thật duy nhất cho
+        # model/fps/image_size/half mặc định; RuntimeConfig chỉ set PARKING_RUNTIME_PROFILE
+        # để Settings tự resolve qua get_runtime_profile().
         values = {
             "PARKING_RUNTIME_PROFILE": mode_profile,
             "PARKING_RUNTIME_MODE": self.mode,
             "PARKING_DATABASE_MODE": self.database_mode,
             "PARKING_DETECTOR_DEVICE": self.device,
-            "PARKING_DETECTOR_MODEL": str(root / "models" / "yolo11n.pt"),
             "PARKING_MAX_CAMERAS": str(self.max_cameras),
             "PARKING_SELECTED_CAMERAS": ",".join(self.cameras),
             "PARKING_DATABASE_URL": f"sqlite:///{db.as_posix()}",
