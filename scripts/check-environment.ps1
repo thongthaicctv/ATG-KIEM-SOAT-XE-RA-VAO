@@ -1,4 +1,4 @@
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
+﻿$ProjectRoot = Split-Path -Parent $PSScriptRoot
 $VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $CheckScript = Join-Path $ProjectRoot "scripts\environment_check.py"
 $env:PARKING_RUNTIME_PROFILE = if ($env:PARKING_RUNTIME_PROFILE) { $env:PARKING_RUNTIME_PROFILE } else { "debug_1cam" }

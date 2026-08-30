@@ -1,4 +1,4 @@
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
+﻿$ProjectRoot = Split-Path -Parent $PSScriptRoot
 $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 Set-Location -LiteralPath $ProjectRoot
 if (-not (Test-Path -LiteralPath $Python)) { Write-Host "FAIL: Chưa có .venv. Chạy scripts\setup-dev.ps1 trước." -ForegroundColor Red; exit 1 }
