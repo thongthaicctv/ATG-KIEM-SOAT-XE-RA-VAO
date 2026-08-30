@@ -20,7 +20,12 @@ class RuntimeProfile:
 RUNTIME_PROFILES = {
     "debug_1cam": RuntimeProfile("debug_1cam", 1, 4.0, 640, 5.0, "yolo11n.pt", "cpu", False, True),
     "debug_2zones": RuntimeProfile("debug_2zones", 2, 4.0, 640, 5.0, "yolo11n.pt", "cuda:0", False, True),
-    "production_10cam": RuntimeProfile("production_10cam", 10, 5.0, 960, 2.0, "yolo11s.pt", "cuda", True, False),
+    # detector_half=False (FP32): benchmark thuc te tren NVIDIA T600 4GB (Phase 3/3.1,
+    # xem reports/benchmark/) xac nhan FP16 CHAM HON FP32 tren GPU nay (vi du YOLO11s
+    # 640: FP32 ~33.78ms/29.60fps vs FP16 ~70.32ms/14.22fps) - khong phai loi benchmark,
+    # da audit root cause rieng (Phase 3.1) va xac nhan day la so lieu that. Model/imgsz
+    # GIU NGUYEN yolo11s.pt/960 - Phase 4 CHI doi precision, khong doi model/kich thuoc.
+    "production_10cam": RuntimeProfile("production_10cam", 10, 5.0, 960, 2.0, "yolo11s.pt", "cuda", False, False),
 }
 
 

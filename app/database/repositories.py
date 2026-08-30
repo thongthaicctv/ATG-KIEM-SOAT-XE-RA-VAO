@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from dataclasses import dataclass
@@ -64,7 +64,12 @@ class ParkingRepository:
         obj=ParkingSession(**values); self.db.add(obj)
         self.db.commit(); return obj
     def get_open_session_for_track(self,camera_id: int,track_id: str,tracker_generation: int=0):
-        return self.db.scalar(select(ParkingSession).join(VehicleTrackLink,VehicleTrackLink.session_id==ParkingSession.id).where(ParkingSession.camera_id==camera_id,ParkingSession.left_at.is_(None),VehicleTrackLink.tracker_track_id==str(track_id),VehicleTrackLink.tracker_generation==int(tracker_generation)).limit(1))
+        # Phase 4.2: chi tinh la "chu so huu" neu track link con dang ACTIVE (ended_at IS
+        # NULL). Truoc fix nay, MOI track_id ma 1 session TUNG duoc lien ket qua (ke ca da
+        # chuyen sang track_id khac tu lau) van vinh vien duoc coi la "cua" session do,
+        # khien 1 track_id moi/khong lien quan cua xe khac vo tinh trung so voi lich su cu
+        # se bi bao "Track ownership conflict" gia (xac nhan qua audit Case A thuc te).
+        return self.db.scalar(select(ParkingSession).join(VehicleTrackLink,VehicleTrackLink.session_id==ParkingSession.id).where(ParkingSession.camera_id==camera_id,ParkingSession.left_at.is_(None),VehicleTrackLink.tracker_track_id==str(track_id),VehicleTrackLink.tracker_generation==int(tracker_generation),VehicleTrackLink.ended_at.is_(None)).limit(1))
     def get_open_session_for_vehicle_instance(self,camera_id: int,vehicle_instance_id: str): return self.open_by_vehicle_instance(camera_id,vehicle_instance_id)
     def try_add_track_link(self,session_id: int,track_id: str,started_at: datetime,tracker_generation: int=0,commit: bool=True):
         target=self.db.get(ParkingSession,session_id)
@@ -75,6 +80,12 @@ class ParkingRepository:
         owner=self.get_open_session_for_track(target.camera_id,track_id,tracker_generation)
         if owner and owner.id!=session_id: return TrackLinkResult(False,"CONFLICT_WITH_OTHER_OPEN_SESSION",str(track_id),session_id,owner.id,reason="track_owned_by_other_open_session")
         try:
+            # Phien nay dang chuyen sang track_id MOI trong CUNG generation - dong
+            # (ended_at) cac track link CU (track_id KHAC) cua CHINH phien nay de giai
+            # phong quyen "so huu" track_id cu (xem ghi chu tai get_open_session_for_track
+            # o tren - day la noi DUY NHAT ghi ended_at, khop voi field da co san trong
+            # schema tu truoc, chua tung duoc ghi).
+            self.db.execute(update(VehicleTrackLink).where(VehicleTrackLink.session_id==session_id,VehicleTrackLink.tracker_generation==int(tracker_generation),VehicleTrackLink.tracker_track_id!=str(track_id),VehicleTrackLink.ended_at.is_(None)).values(ended_at=started_at))
             link=VehicleTrackLink(session_id=session_id,tracker_track_id=str(track_id),tracker_generation=int(tracker_generation),started_at=started_at); self.db.add(link)
             if commit: self.db.commit()
             return TrackLinkResult(True,"LINKED",str(track_id),session_id,session_id,link=link)

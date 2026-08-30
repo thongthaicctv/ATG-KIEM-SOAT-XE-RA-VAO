@@ -24,11 +24,7 @@ from app.ui.monitor_widget import MonitorWidget
 from app.ui.polygon_editor import PolygonEditor
 from app.ui.preview_dialog import PreviewDialog
 from app.utils.image_utils import annotate_frame,mask_rtsp_url,rotate_frame,rotate_normalized_polygon
-from app.utils.time_utils import format_local_datetime,seconds_between,utc_now
-
-
-def format_duration_minutes(duration_seconds):
-    return f"{max(0,float(duration_seconds or 0))/60:.2f} phút"
+from app.utils.time_utils import format_duration_hhmmss,format_local_datetime,seconds_between,utc_now
 
 
 class MainWindow(QMainWindow):
@@ -43,8 +39,8 @@ class MainWindow(QMainWindow):
         for text,handler in [("Thêm",self.add_camera),("Sửa",self.edit_camera),("Xóa",self.delete_camera),("Kiểm tra RTSP",self.test_rtsp),("Mở preview",self.open_preview),("Vẽ polygon",self.edit_polygon),("Hướng dẫn debug",self.open_debug_guide),("Làm mới",self.reload)]:
             b=QPushButton(text); b.clicked.connect(lambda _checked=False,h=handler:h()); bar.addWidget(b)
         bar.addStretch(); lay.addLayout(bar); self.camera_table=QTableWidget(0,7); self.camera_table.setHorizontalHeaderLabels(["Mã","Tên","Vị trí","RTSP","Trạng thái","FPS","Polygon"]); self.camera_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.camera_table.setEditTriggers(QAbstractItemView.NoEditTriggers); lay.addWidget(self.camera_table)
-        self.monitor=MonitorWidget(); self.monitor.preview_requested.connect(self.open_preview); self.history=QTableWidget(0,9); self.history.setHorizontalHeaderLabels(["Session","Camera","Vị trí","Loại xe","Phát hiện","Xác nhận","Rời","Thời lượng (phút)","Trạng thái"]); self.history.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        tabs.addTab(self.camera_page,"Camera"); tabs.addTab(self.monitor,"Giám sát"); self.history_tab_index=tabs.addTab(self.history,"Lịch sử phiên đỗ"); tabs.currentChanged.connect(self._on_tab_changed); splitter.addWidget(tabs); self.event_log=EventLogWidget(); splitter.addWidget(self.event_log); splitter.setSizes([620,180]); self.setCentralWidget(splitter); self.setStatusBar(QStatusBar()); db_mode=getattr(self.settings,"database_mode","PRODUCTION"); runtime_mode=getattr(self.settings,"runtime_mode",self.settings.runtime_profile); self.statusBar().showMessage(f"DB MODE: {db_mode} | Mode: {runtime_mode} | Profile: {self.settings.runtime_profile} | camera: 0/{self.settings.max_cameras} | AI: {getattr(self.detector,'actual_device',self.detector.device)} | model instances: {1 if self.detector.enabled else 0}")
+        self.monitor=MonitorWidget(); self.monitor.preview_requested.connect(self.open_preview); self.history=QTableWidget(0,9); self.history.setHorizontalHeaderLabels(["Session","Camera","Vị trí","Loại xe","Phát hiện","Xác nhận","Rời","Thời lượng (giờ:phút:giây)","Trạng thái"]); self.history.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        tabs.addTab(self.camera_page,"Camera"); tabs.addTab(self.monitor,"Giám sát"); self.history_tab_index=tabs.addTab(self.history,"Lịch sử phiên đỗ"); tabs.currentChanged.connect(self._on_tab_changed); splitter.addWidget(tabs); self.event_log=EventLogWidget(); splitter.addWidget(self.event_log); splitter.setSizes([620,180]); self.setCentralWidget(splitter); self.setStatusBar(QStatusBar()); db_mode=getattr(self.settings,"database_mode","PRODUCTION"); runtime_mode=getattr(self.settings,"runtime_mode",self.settings.runtime_profile); self.statusBar().showMessage(f"DB MODE: {db_mode} | Mode: {runtime_mode} | Profile: {self.settings.runtime_profile} | camera: 0/{self.settings.max_cameras} | AI: {self.detector.device} | model instances: {1 if self.detector.enabled else 0}")
     def selected_camera(self):
         row=self.camera_table.currentRow()
         return self.cameras.get(int(self.camera_table.item(row,0).data(Qt.UserRole))) if row>=0 else None
@@ -70,7 +66,7 @@ class MainWindow(QMainWindow):
     def _set_history_row(self,row,s):
         duration=s.parking_duration_seconds
         if s.status==SessionStatus.COMPLETED and s.parked_at and s.left_at and (duration is None or duration==0): duration=seconds_between(s.parked_at,s.left_at)
-        vals=[s.session_code,s.camera.camera_code,s.parking_position_code,s.vehicle_class or "-",self.dt(s.entered_at),self.dt(s.parked_at),self.dt(s.left_at),format_duration_minutes(duration),s.status]
+        vals=[s.session_code,s.camera.camera_code,s.parking_position_code,s.vehicle_class or "-",self.dt(s.entered_at),self.dt(s.parked_at),self.dt(s.left_at),format_duration_hhmmss(duration),s.status]
         for column,value in enumerate(vals):
             item=QTableWidgetItem(str(value)); item.setData(Qt.UserRole,s.id); self.history.setItem(row,column,item)
     def refresh_history_session(self,session_id):
@@ -222,7 +218,7 @@ class MainWindow(QMainWindow):
             elif action.kind=="PARK_END" and action.session_id:
                 session=self.parking.get_session(action.session_id)
                 if session:
-                    exit_path=self.snapshots.save(frame,camera.camera_code,session.session_code,"exit",now); self.session_service.complete_session(session,camera_id,action.vehicle,now,exit_path)
+                    exit_path=self.snapshots.save(frame,camera.camera_code,session.session_code,"exit",now); self.session_service.complete_session(session,camera_id,action.vehicle,now,exit_path,departure_time_uncertain=getattr(action,"departure_uncertain",False))
             if action.kind=="VEHICLE_CANDIDATE" and runtime: self.log.info("Vehicle runtime created vehicle_instance_id=%s track_id=%s reason=unmatched_stable_track",runtime.vehicle_instance_id,action.vehicle.track_id)
             if action.kind=="TRACK_ASSOCIATED" and runtime: self.log.info("Track associated to existing runtime vehicle_instance_id=%s new_track=%s session=%s",runtime.vehicle_instance_id,action.vehicle.track_id,runtime.session_code)
             if action.kind=="STATE_TRANSITION" and runtime: self.log.info("Vehicle state transition camera=%s runtime=%s state=%s session=%s",camera.camera_code,runtime.runtime_id,runtime.state,runtime.session_code)

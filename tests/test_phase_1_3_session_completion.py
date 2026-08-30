@@ -95,7 +95,9 @@ def test_session_signal_refreshes_existing_history_row_without_duplicate(db, qtb
     assert fake.history.rowCount() == 1
     assert fake.history.item(0, 0).data(Qt.UserRole) == session.id
     assert fake.history.item(0, 6).text() != "-"
-    assert fake.history.item(0, 7).text() == "0.42 phút"
+    # Phase 4.3: cot "Thoi luong" doi tu phut thap phan ("0.42 phut") sang HH:mm:ss
+    # (format_duration_hhmmss) theo yeu cau Section 10 - 25 giay = 00:00:25.
+    assert fake.history.item(0, 7).text() == "00:00:25"
     assert fake.history.item(0, 8).text() == "COMPLETED"
 
 

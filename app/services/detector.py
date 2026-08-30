@@ -49,7 +49,14 @@ class YoloDetector:
         # Một model được dùng chung cho các camera. Ultralytics không bảo đảm một
         # model instance có thể predict đồng thời từ nhiều QThread.
         predict_options={"conf":threshold,"imgsz":int(image_size),"device":self.device,"verbose":False}
-        if self.half: predict_options["half"]=True
+        # KHONG dung "half":True - da bi Ultralytics deprecate (thay bang "quantize"),
+        # va vi model duoc tai su dung qua nhieu lan predict() lien tiep, "half=True" se
+        # trigger lai canh bao deprecation + console I/O o MOI FRAME (xem audit Phase 3.1:
+        # _handle_deprecation() trong ultralytics/cfg/__init__.py chay lai o moi lan
+        # Model.predict() vi predictor duoc tai su dung). "quantize":16 la API hien hanh,
+        # cung hieu ung FP16, khong di qua nhanh deprecation. Khong doi conf/imgsz/device/
+        # verbose/output format - chi doi kwarg precision nay.
+        if self.half: predict_options["quantize"]=16
         with self._lock:
             results=self.model.predict(frame,**predict_options)
         tensor=getattr(getattr(results[0],"boxes",None),"xyxy",None) if results else None; result_device=str(tensor.device) if tensor is not None else "unknown"; self.actual_device=result_device

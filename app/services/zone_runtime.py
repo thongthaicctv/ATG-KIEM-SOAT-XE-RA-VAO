@@ -30,6 +30,7 @@ class ZoneAction:
     vehicle: VehicleObservation | None = None
     session_id: int | None = None
     occurred_at: datetime | None = None
+    departure_uncertain: bool = False  # Phase 4.3: True khi PARK_END den tu mot runtime KHOI PHUC tu DB (recovery_session) chua bao gio duoc mot detection song nao xac nhan lai trong lan chay nay - thoi diem roi bai chinh xac la KHONG THE BIET, khong phai gia tri do dac chinh xac.
 
 
 @dataclass(slots=True)
@@ -152,7 +153,7 @@ class ZoneRuntimeState:
                 if self.stable_frames<self.stable_frames_after_reconnect: continue
                 if runtime.missing_tick is None: runtime.missing_tick=tick; runtime.state="LEAVING"; actions.append(ZoneAction("VEHICLE_LEAVING",runtime.runtime_id,runtime.observation,runtime.session_id,now))
                 elif tick-runtime.missing_tick>=max(self.track_lost_grace_seconds,self.detection_miss_grace_seconds)+self.exit_confirm_seconds:
-                    actions.append(ZoneAction("PARK_END",runtime.runtime_id,runtime.observation,runtime.session_id,now)); self.vehicles.pop(runtime.runtime_id,None)
+                    actions.append(ZoneAction("PARK_END",runtime.runtime_id,runtime.observation,runtime.session_id,now,departure_uncertain=runtime.recovery_session is not None)); self.vehicles.pop(runtime.runtime_id,None)
         if self.recovery_active and self.stable_frames>=self.stable_frames_after_reconnect: self.recovery_active=False
         return actions
 

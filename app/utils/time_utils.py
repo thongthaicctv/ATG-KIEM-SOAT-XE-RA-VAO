@@ -29,3 +29,19 @@ def format_local_datetime(value: datetime | None,fmt="%d/%m/%Y %H:%M:%S") -> str
 def seconds_between(start: datetime | None, end: datetime | None) -> int | None:
     start_utc=ensure_utc(start); end_utc=ensure_utc(end)
     return None if not start_utc or not end_utc else max(0,int((end_utc-start_utc).total_seconds()))
+
+
+def format_duration_hhmmss(total_seconds) -> str:
+    # Phase 4.3: hien thi thoi luong do xe dang HH:mm:ss thay cho phut thap phan
+    # (vd "17386.42 phut" - kho doc va de nham). KHONG dung datetime.strftime("%H:%M:%S")
+    # vi ham do WRAP lai ve 0 sau moi 24 gio - phien do xe co the keo dai nhieu ngay
+    # (vd phien bi dong sau khi khoi phuc tu DB ma khong co detection song nao xac nhan
+    # lai), nen gio phai duoc tinh TUYET DOI (co the vuot qua 23), khong wrap theo dong ho.
+    # Chi thay doi CACH HIEN THI - khong dong cham gia tri parking_duration_seconds trong DB.
+    try:
+        total=int(total_seconds or 0)
+    except (TypeError,ValueError):
+        total=0
+    if total<0: total=0
+    hours,remainder=divmod(total,3600); minutes,seconds=divmod(remainder,60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
