@@ -208,6 +208,21 @@ class MainWindow(QMainWindow):
                 self.log.info("Parking session started camera=%s session=%s runtime=%s track=%s",camera.camera_code,session.session_code,runtime.runtime_id,action.vehicle.track_id)
             elif action.kind in ("RECOVER_SESSION","TRACK_RECOVERED","OBSERVED") and runtime and action.vehicle and action.session_id:
                 session=self.parking.get_session(action.session_id)
+                if session and session.left_at is not None:
+                    # Phase 4.5: session da COMPLETED/closed (left_at khong con None) nhung
+                    # runtime van con giu tham chieu cu toi no (vd sau khi mot runtime/tick
+                    # khac da dong phien nay truoc do trong cung camera). get_session() luon
+                    # tra ve session bat ke da dong hay chua - get_open_session_for_track() o
+                    # duoi day KHONG bao gio phat hien duoc xung dot nay vi no chi tim trong
+                    # cac phien CON MO (left_at IS NULL), nen mot session da dong se KHONG BAO
+                    # GIO bi coi la "owner" xung dot - dan toi ensure_track()/recover() bi goi
+                    # lai MOI FRAME vao mot phien da dong (CONFIRMED qua bang chung Case A
+                    # LINK_ERROR that: requested_session=102 status=COMPLETED reason=session_closed
+                    # lap lai hang tram lan/phut). Xoa tham chieu cu de runtime co the bat dau
+                    # mot vong doi MOI hop le (PARK_START) cho lan quan sat tiep theo, thay vi
+                    # ket qua vinh vien vao phien da dong - KHONG lam yeu guard o repositories.py.
+                    self.log.warning("Stale session reference cleared camera=%s track_id=%s closed_session=%s runtime=%s reason=session_already_closed",camera.camera_code,action.vehicle.track_id,session.session_code,runtime.vehicle_instance_id)
+                    runtime.session_id=None; runtime.session_code=None; runtime.recovery_session=None; continue
                 if session:
                     owner=self.parking.get_open_session_for_track(camera.id,action.vehicle.track_id,zone.reconnect_generation)
                     if owner and owner.id!=session.id:

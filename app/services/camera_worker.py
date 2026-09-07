@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging, time,threading
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from PySide6.QtCore import QObject, Signal, Slot
 
 from app.utils.geometry import denormalize_points
@@ -14,9 +15,44 @@ from .session_vehicle_matcher import attach_vehicle_signature
 from .rtsp_capture import RtspCapture
 
 
+# Phase 4.5: cac truong cau hinh camera ma CameraWorker.run()/set_preview_fps() can doc/ghi.
+# CHI danh sach nay duoc sao chep sang snapshot thuan (xem _snapshot_camera) - KHONG duoc
+# giu lai doi tuong ORM Camera song (gan voi SQLAlchemy Session cua MainWindow.self.db).
+_CAMERA_WORKER_FIELDS=("id","camera_code","rtsp_url","rotation_degrees","processing_fps","preview_fps",
+    "zone_type","capacity","parking_confirm_seconds","exit_confirm_seconds","detection_miss_grace_seconds",
+    "track_lost_grace_seconds","use_polygon_roi","polygon_points","vehicle_confidence","enable_motorcycles",
+    "detector_image_size","vehicle_polygon_overlap_threshold","ai_debug_overlay")
+
+
+def _snapshot_camera(camera):
+    """Phase 4.5 - THREAD SAFETY FIX (CONFIRMED root cause cua loi SQLAlchemy
+    "This session is in 'prepared' state; no further SQL can be emitted within this
+    transaction" quan sat duoc tren Windows/RTSP that, reports/runtime_ab/case_A_LINK_ERROR_*):
+    CameraWorker.run() chay tren MOT QThread rieng cho moi camera
+    (xem CameraManager.start_camera: worker.moveToThread(thread)) va lien tuc doc
+    self.camera.<attr> (bao gom cot JSON polygon_points) trong SUOT vong doi cua no.
+    Truoc patch, self.camera la doi tuong ORM Camera SONG, van con gan voi
+    MainWindow.self.db (mot SQLAlchemy Session DUY NHAT dung chung cho CA 3 camera).
+    Main thread lien tuc goi self.db.commit()/rollback() tren CHINH Session do (vd
+    ParkingSessionService.link_track()/complete_session()/recover(), dac biet lap lai
+    rat nhanh moi khi co canh bao 'Track ownership conflict ... reason=session_closed').
+    SQLAlchemy Session KHONG an toan da luong - tai lieu chinh thuc cua SQLAlchemy
+    khang dinh dieu nay. Da CONFIRMED qua tai hien truc tiep (script doc lap, cung
+    engine/Session that): 1 luong doc lien tuc thuoc tinh ORM trong khi luong chinh
+    commit/rollback lien tuc tren CUNG Session gay TREO (deadlock-like hang) - cung
+    mot vi pham nen tang voi loi 'prepared state' quan sat duoc tren Windows.
+    Fix: cat dut hoan toan lien he voi Session TRUOC KHI dua camera vao CameraWorker -
+    sao chep cac gia tri cau hinh can thiet sang mot SimpleNamespace THUAN, khong
+    thuoc Session nao, an toan doc/ghi tu bat ky luong nao. KHONG doi gia tri nao,
+    KHONG doi RTSP/tracker/timer/model/CUDA nao - chi cat dut tham chieu ORM.
+    """
+    return SimpleNamespace(**{field: getattr(camera, field) for field in _CAMERA_WORKER_FIELDS})
+
+
 class CameraWorker(QObject):
     frame_ready=Signal(int,object,object); preview_frame=Signal(int,object); status_changed=Signal(int,bool,str); detector_error=Signal(int,str); stopped=Signal(int); error=Signal(int,str)
     def __init__(self,camera,detector,tracker_factory):
+        camera=_snapshot_camera(camera)
         buffer_frames=calculate_track_buffer(camera.processing_fps,camera.track_lost_grace_seconds)
         try: tracker=tracker_factory(max_missed=buffer_frames)
         except TypeError: tracker=tracker_factory()
