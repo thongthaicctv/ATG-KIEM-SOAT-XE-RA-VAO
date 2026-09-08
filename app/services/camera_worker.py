@@ -15,6 +15,15 @@ from .session_vehicle_matcher import attach_vehicle_signature
 from .rtsp_capture import RtspCapture
 
 
+# Phase 4.7B: khong reset reconnect backoff chi vi DUY NHAT mot frame vua den sau
+# khi mo lai FFmpeg - neu ket noi that su khong on dinh (vd RTSP flap lien tuc),
+# reset backoff qua som se gay "reconnect flapping" (backoff quay ve 1s ngay lap
+# tuc, khong con tac dung giam tai spawn FFmpeg lien tuc). Chi reset ve 1.0 sau khi
+# co mot khoang thoi gian NHAN DUOC FRAME LIEN TUC on dinh (3s) ke tu luc ket noi
+# lai - khong phai vo han, khong doi cach RtspCapture tu phan biet SOFT/HARD stall.
+_BACKOFF_STABLE_RESET_SECONDS=3.0
+
+
 # Phase 4.5: cac truong cau hinh camera ma CameraWorker.run()/set_preview_fps() can doc/ghi.
 # CHI danh sach nay duoc sao chep sang snapshot thuan (xem _snapshot_camera) - KHONG duoc
 # giu lai doi tuong ORM Camera song (gan voi SQLAlchemy Session cua MainWindow.self.db).
@@ -61,6 +70,7 @@ class CameraWorker(QObject):
     @Slot()
     def run(self):
         self.running=True; backoff=1.0; cap=None; next_process=0.0; online_announced=False; detector_error_sent=False; frame_index=0
+        connected_since=None; backoff_reset_done=True  # Phase 4.7B: xem _BACKOFF_STABLE_RESET_SECONDS
         self.log.info("Worker config camera=%s parking_confirm_seconds=%s exit_confirm_seconds=%s detection_grace_seconds=%s track_lost_seconds=%s zone_type=%s capacity=%s",self.camera.camera_code,self.camera.parking_confirm_seconds,self.camera.exit_confirm_seconds,self.camera.detection_miss_grace_seconds,self.camera.track_lost_grace_seconds,self.camera.zone_type,self.camera.capacity)
         if self.detector.enabled: self.log.info("Detector ready model=%s device=%s half=%s",self.detector.name,getattr(self.detector,"device","-"),getattr(self.detector,"half",False))
         while self.running:
@@ -68,13 +78,16 @@ class CameraWorker(QObject):
                 if cap is None or not cap.is_opened():
                     cap=RtspCapture(self.camera.rtsp_url,read_timeout=8.0,frame_callback=self._emit_preview,preview_fps=self.camera.preview_fps); self.capture=cap
                     if not cap.open(): raise ConnectionError("Không mở được FFmpeg để đọc RTSP")
+                    connected_since=time.monotonic(); backoff_reset_done=False
                 ok,frame=cap.read()
                 if not ok: raise ConnectionError("Không đọc được frame")
                 frame=rotate_frame(frame,self.camera.rotation_degrees)
                 if not online_announced:
                     self.log.info("First frame received shape=%s",tuple(frame.shape))
                     self.status_changed.emit(self.camera.id,True,"ONLINE"); online_announced=True
-                backoff=1.0
+                # Phase 4.7B: reset backoff chi sau khoang on dinh, khong phai ngay frame dau tien.
+                if not backoff_reset_done and connected_since is not None and time.monotonic()-connected_since>=_BACKOFF_STABLE_RESET_SECONDS:
+                    backoff=1.0; backoff_reset_done=True
                 now=time.monotonic()
                 if now<next_process: continue
                 next_process=now+1/max(.1,self.camera.processing_fps)
@@ -108,8 +121,17 @@ class CameraWorker(QObject):
                 if not self.running:
                     break
                 self.log.warning("Worker lỗi: %s; sẽ kết nối lại sau %.0f giây",exc,backoff); self.status_changed.emit(self.camera.id,False,"OFFLINE"); self.error.emit(self.camera.id,f"{exc} - reconnect sau {backoff:.0f}s")
+                # Phase 4.7B: log vai dong stderr FFmpeg gan nhat (da loai credential boi
+                # RtspCapture._stderr_reader_loop) de ho tro chan doan production - truoc day
+                # stderr=DEVNULL nen khong the biet FFmpeg thuc su bao loi gi khi that bai.
+                # Phase 4.7B.1: dung get_stderr_summary() (tail rate-limited + tom tat so
+                # lan xuat hien tung nhom loi HEVC da biet) thay vi get_stderr_tail() thuan -
+                # van 1 dong log duy nhat, khong doi cach log duoc phat ra hay muc do (van chi
+                # log khi co du lieu, van sanitize credential nhu cu).
+                stderr_summary=cap.get_stderr_summary() if cap else ""
+                if stderr_summary: self.log.warning("FFmpeg stderr tail camera=%s:\n%s",self.camera.camera_code,stderr_summary)
                 if cap: cap.release(); cap=None; self.capture=None
-                online_announced=False
+                online_announced=False; connected_since=None; backoff_reset_done=True
                 end=time.monotonic()+backoff
                 while self.running and time.monotonic()<end: time.sleep(.1)
                 backoff=min(30.0,backoff*2)

@@ -21,11 +21,18 @@ RUNTIME_PROFILES = {
     "debug_1cam": RuntimeProfile("debug_1cam", 1, 4.0, 640, 5.0, "yolo11n.pt", "cpu", False, True),
     "debug_2zones": RuntimeProfile("debug_2zones", 2, 4.0, 640, 5.0, "yolo11n.pt", "cuda:0", False, True),
     # detector_half=False (FP32): benchmark thuc te tren NVIDIA T600 4GB (Phase 3/3.1,
-    # xem reports/benchmark/) xac nhan FP16 CHAM HON FP32 tren GPU nay (vi du YOLO11s
-    # 640: FP32 ~33.78ms/29.60fps vs FP16 ~70.32ms/14.22fps) - khong phai loi benchmark,
-    # da audit root cause rieng (Phase 3.1) va xac nhan day la so lieu that. Model/imgsz
-    # GIU NGUYEN yolo11s.pt/960 - Phase 4 CHI doi precision, khong doi model/kich thuoc.
-    "production_10cam": RuntimeProfile("production_10cam", 10, 5.0, 960, 2.0, "yolo11s.pt", "cuda", False, False),
+    # xem reports/benchmark/) xac nhan FP16 CHAM HON FP32 tren GPU nay - khong phai loi
+    # benchmark, da audit root cause rieng (Phase 3.1) va xac nhan day la so lieu that.
+    # Phase 4.6: audit A/B/C chinh thuc tren du lieu RTSP that (yolo11n/640/FP32 vs
+    # yolo11n/960/FP32 vs yolo11s/640/FP32) - quyet dinh cuoi cung la RECOMMEND_A.
+    # Phase 4.7A: cap nhat production_10cam theo quyet dinh do (model=yolo11n.pt,
+    # imgsz=640, device=cuda:0, half=False/FP32). Day la CONFIG-ONLY change, khong
+    # doi session/tracking/polygon/capacity/timers. Luu y kien truc: gia tri
+    # detector_image_size o day CHI la default goi y khi tao camera moi (xem
+    # app/ui/camera_dialog.py); imgsz THUC TE dung khi predict() la
+    # camera.detector_image_size (cot rieng tung camera trong DB, xem
+    # app/services/camera_worker.py) - KHONG doi tu Settings o moi frame.
+    "production_10cam": RuntimeProfile("production_10cam", 10, 5.0, 640, 2.0, "yolo11n.pt", "cuda:0", False, False),
 }
 
 

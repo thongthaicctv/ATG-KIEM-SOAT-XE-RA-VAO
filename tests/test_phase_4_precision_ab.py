@@ -51,10 +51,14 @@ from scripts.create_ab_test_database import (
 def test_production_10cam_precision_is_fp32():
     profile = RUNTIME_PROFILES["production_10cam"]
     assert profile.detector_half is False
-    # Phase 4 CHI doi precision - model/imgsz/device/max_cameras phai giu nguyen.
-    assert profile.model_filename == "yolo11s.pt"
-    assert profile.detector_image_size == 960
-    assert profile.detector_device == "cuda"
+    # Phase 4: chi doi precision (half=False/FP32), model/imgsz/device/max_cameras
+    # giu nguyen tai thoi diem do. Phase 4.6 audit A/B/C chinh thuc (yolo11n/640/FP32
+    # vs yolo11n/960/FP32 vs yolo11s/640/FP32) -> RECOMMEND_A; Phase 4.7A ap dung
+    # quyet dinh do vao production_10cam (model/imgsz/device cap nhat, max_cameras
+    # va detector_half khong doi).
+    assert profile.model_filename == "yolo11n.pt"
+    assert profile.detector_image_size == 640
+    assert profile.detector_device == "cuda:0"
     assert profile.max_cameras == 10
 
 
