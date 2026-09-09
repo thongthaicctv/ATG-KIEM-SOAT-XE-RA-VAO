@@ -203,6 +203,28 @@ class MainWindow(QMainWindow):
                 if runtime.session_id is not None:
                     self.log.warning("Duplicate session start prevented vehicle_instance_id=%s existing_session=%s requested_track=%s reason=runtime_has_session",runtime.vehicle_instance_id,runtime.session_code,action.vehicle.track_id); continue
                 session=self.session_service.start(camera,action.vehicle,runtime.first_seen_at or now,now,vehicle_instance_id=runtime.vehicle_instance_id,tracker_generation=zone.reconnect_generation)
+                if session.vehicle_instance_id!=runtime.vehicle_instance_id:
+                    # Phase 4.7D HOTFIX 2: session_service.start() correctly refused to
+                    # insert a SECOND DB row for a track already owned by an open session
+                    # (it logged reason=track_owned_by_open_session) and returned that
+                    # EXISTING session instead - but that session belongs to a DIFFERENT
+                    # runtime (session.vehicle_instance_id was set at creation time to the
+                    # ORIGINAL owning runtime's own vehicle_instance_id, per create_session()
+                    # in parking_session_service.py, and never matches this runtime's own
+                    # vehicle_instance_id in a genuine conflict). Binding it here would give
+                    # ONE open ParkingSession TWO simultaneous OCCUPIED runtime owners -
+                    # CONFIRMED real Windows defect (confirmed_occupancy=19 vs open_db=18,
+                    # unmatched_open=0, session_health=OK - the mismatch is invisible to the
+                    # existing session_id-deduplicated health check because both runtimes
+                    # collapse to the same session_id there; see HOTFIX 2 audit report).
+                    # This runtime never legitimately owned this track's session - it must be
+                    # dropped rather than left OCCUPIED/IDENTITY_UNCERTAIN with session_id=
+                    # None, which has no defined unmatched-cleanup path in ZoneRuntimeState.
+                    # process() (that path only handles unmatched runtimes that are either
+                    # CANDIDATE or have session_id is not None - a runtime satisfying neither
+                    # would become a permanent "ghost" with no exit).
+                    self.log.warning("Runtime session ownership conflict prevented vehicle_instance_id=%s requested_track=%s existing_session=%s existing_vehicle_instance=%s reason=track_owned_by_different_runtime",runtime.vehicle_instance_id,action.vehicle.track_id,session.session_code,session.vehicle_instance_id)
+                    zone.vehicles.pop(runtime.runtime_id,None); continue
                 runtime.session_id=session.id; runtime.session_code=session.session_code
                 enter=self.snapshots.save(frame,camera.camera_code,session.session_code,"enter",runtime.first_seen_at or now); parked=self.snapshots.save(frame,camera.camera_code,session.session_code,"parked",now); session.enter_snapshot_path=enter; session.parked_snapshot_path=parked; self.db.commit()
                 self.log.info("Parking session started camera=%s session=%s runtime=%s track=%s",camera.camera_code,session.session_code,runtime.runtime_id,action.vehicle.track_id)

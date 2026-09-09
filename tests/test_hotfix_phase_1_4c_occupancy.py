@@ -22,9 +22,20 @@ def test_full_and_over_capacity_use_only_confirmed_current_identity():
     result=snapshot([vehicle(str(i),session=i) for i in range(4)]); assert result.confirmed_occupancy_count==4 and result.zone_state=="OVER_CAPACITY"
 
 
-def test_five_leaving_sessions_do_not_increase_occupancy():
+def test_leaving_sessions_with_active_session_still_count_until_park_end():
+    # Phase 4.7D (2026-09) SUPERSEDES the original Phase 1.4C assumption this test used
+    # to encode (previously named test_five_leaving_sessions_do_not_increase_occupancy,
+    # asserting confirmed_occupancy_count==1). A runtime in LEAVING state that still owns
+    # an open ParkingSession (session_id is not None) has NOT had its departure confirmed
+    # (PARK_END has not fired) and the session is still ACTIVE in the DB - undercounting
+    # it flips confirmed_occupancy 1 -> 0 -> 1 on a single temporary detection miss while
+    # the SAME ParkingSession stays open the entire time. CONFIRMED via a deterministic
+    # Windows cross-check (no camera/DB involved) - see the Phase 4.7D audit + minimal
+    # hotfix report. leaving_session_count still separately reports the 5 LEAVING
+    # runtimes so callers can distinguish "confirmed still-parked, tracker briefly lost
+    # it" from a freshly-observed OCCUPIED identity if ever needed.
     runtimes=[vehicle("current")]+[vehicle(f"leaving-{i}","LEAVING",99,i+2) for i in range(5)]
-    result=snapshot(runtimes,open_db=6); assert result.confirmed_occupancy_count==1 and result.leaving_session_count==5 and result.zone_state=="OCCUPIED"
+    result=snapshot(runtimes,capacity=10,open_db=6); assert result.confirmed_occupancy_count==6 and result.leaving_session_count==5 and result.zone_state=="OCCUPIED" and result.unmatched_open_session_count==0 and result.session_health_state=="OK"
 
 
 def test_open_database_and_candidates_are_health_not_capacity():
