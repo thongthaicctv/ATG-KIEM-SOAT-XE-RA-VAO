@@ -93,6 +93,26 @@ class ParkingRepository:
             self.db.rollback(); return TrackLinkResult(False,"DATABASE_ERROR",str(track_id),session_id,reason=type(exc).__name__)
     def add_track(self,session_id: int,track_id: str,started_at: datetime,commit: bool=True,tracker_generation: int=0):
         return self.try_add_track_link(session_id,track_id,started_at,tracker_generation,commit)
+    def end_open_track_links(self,session_id: int,ended_at: datetime,commit: bool=True) -> int:
+        # Phase 4.7C HOTFIX 1: try_add_track_link() chi dong (ended_at) cac track link CU
+        # KHI CO mot track link MOI thay the (track_id thay doi giua chung mot session con
+        # dang ACTIVE) - no KHONG BAO GIO duoc goi luc session hoan tat (complete_session()),
+        # nen track link CUOI CUNG/hien tai (dang la track link "active" duy nhat cua session)
+        # van con ended_at IS NULL vinh vien sau khi session da COMPLETED. CONFIRMED qua audit
+        # CASE_CLEAN Windows that (12 open links luc audit = dung bang 6 session COMPLETED x
+        # 1 link con mo/session, xem reports/session_audit/phase47c_before.md va bao cao hotfix
+        # nay). Ham nay la noi DUY NHAT dong TAT CA track link con mo (ended_at IS NULL) cua
+        # MOT session - dung UPDATE hang loat (Core-style, giong cach lam cua try_add_track_link
+        # o tren) thay vi tao/xoa doi tuong ORM, de tranh dung cham toi identity map cua cac
+        # link object khac co the da duoc nap trong CUNG SQLAlchemy Session. KHONG tao link
+        # moi, KHONG doi track link nao DA ended_at truoc do (WHERE ended_at IS NULL bao ve
+        # dieu nay - idempotent: goi lai lan 2 tren cung session se khop 0 hang, khong loi).
+        # ended_at DUNG BANG left_at cua session (tham so ended_at truyen vao tu goi noi nay) -
+        # KHONG dung mot thoi diem audit/ghi log muon hon, KHONG bia gio khac voi thoi diem
+        # hoan tat session that su (muc 5 yeu cau).
+        result=self.db.execute(update(VehicleTrackLink).where(VehicleTrackLink.session_id==session_id,VehicleTrackLink.ended_at.is_(None)).values(ended_at=ended_at))
+        if commit: self.db.commit()
+        return int(result.rowcount or 0)
     def has_track(self,session_id: int,track_id: str,tracker_generation: int | None=None) -> bool:
         query=select(VehicleTrackLink.id).where(VehicleTrackLink.session_id==session_id,VehicleTrackLink.tracker_track_id==str(track_id))
         if tracker_generation is not None: query=query.where(VehicleTrackLink.tracker_generation==int(tracker_generation))

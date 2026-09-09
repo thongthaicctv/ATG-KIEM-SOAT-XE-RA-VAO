@@ -238,9 +238,23 @@ class MainWindow(QMainWindow):
             if action.kind=="TRACK_ASSOCIATED" and runtime: self.log.info("Track associated to existing runtime vehicle_instance_id=%s new_track=%s session=%s",runtime.vehicle_instance_id,action.vehicle.track_id,runtime.session_code)
             if action.kind=="STATE_TRANSITION" and runtime: self.log.info("Vehicle state transition camera=%s runtime=%s state=%s session=%s",camera.camera_code,runtime.runtime_id,runtime.state,runtime.session_code)
         stats=payload.get("stats",{}); open_db=len(self.parking.find_open_sessions_for_position(camera.id,camera.parking_position_code)); active_runtime=len(zone.vehicles); occupancy=zone.occupancy_snapshot(open_db); unmatched_db=occupancy.unmatched_open_session_count; stats.update({"current_track_count":sum(c.time_since_update==0 for c in candidates),"observed_vehicle_count":occupancy.observed_vehicle_count,"candidate_runtime_count":occupancy.candidate_count,"parked_runtime_count":occupancy.confirmed_occupancy_count,"leaving_runtime_count":occupancy.leaving_session_count,"recovery_pending_runtime_count":occupancy.recovery_pending_count,"open_session_count_database":open_db,"unmatched_open_session_count":unmatched_db}); inference_ms=float(stats.get("inference_ms",0)); actual_fps=1000/inference_ms if inference_ms>0 else 0; visible=sorted(zone.vehicles.values(),key=lambda v:(v.session_id is None,v.first_seen_at or now))[:3]; summary=" | ".join(f"{v.stabilized_class}:{v.state}:{v.session_code or '-'}" for v in visible) or "-"
-        if unmatched_db: self.log.warning("Session runtime mismatch camera=%s tracks_in_polygon=%s active_runtime=%s open_sessions=%s unmatched_sessions=%s",camera.camera_code,len(candidates),active_runtime,open_db,unmatched_db)
+        # Phase 4.7C (muc 38): "Session runtime mismatch" TRUOC DAY duoc log WARNING o
+        # MOI FRAME rieng biet voi khoi dedup "Zone occupancy calculated" ben duoi, du
+        # signature (unmatched_db va cac so lieu occupancy khac) KHONG doi giua cac
+        # frame - gay log-flood keo dai suot ca cua so hoi phuc (vd: audit tai hien
+        # CASE R1/R5 cho thay canh bao nay lap lai MOI frame trong ~10s+ moi lan co
+        # reconciliation, CONFIRMED qua tai hien co kiem soat - KHONG phai loi logic
+        # phien/session, xem bao cao audit). Day KHONG phai fix logic nghiep vu - CHI
+        # gop chung dieu kien voi cung 1 signature-change check da co san (occupancy_changed)
+        # de canh bao nay CHI xuat hien lan dau va moi khi trang thai THAT SU doi (vd
+        # unmatched_sessions giam dan qua tung buoc hoi phuc, hoac tang len khi co mismatch
+        # moi) - giu nguyen tan suat cua khoi "Zone occupancy calculated" INFO log (khong
+        # doi hanh vi cua no), KHONG lam yeu/an di ban than dieu kien mismatch (unmatched_db
+        # van duoc tinh dung nhu cu, van duoc bao cao day du trong stats/monitor).
         signature=(occupancy.observed_vehicle_count,occupancy.confirmed_occupancy_count,occupancy.candidate_count,occupancy.leaving_session_count,occupancy.recovery_pending_count,open_db,unmatched_db,occupancy.zone_state,occupancy.session_health_state)
-        if self.last_occupancy_signature.get(camera_id)!=signature:
+        occupancy_changed=self.last_occupancy_signature.get(camera_id)!=signature
+        if unmatched_db and occupancy_changed: self.log.warning("Session runtime mismatch camera=%s tracks_in_polygon=%s active_runtime=%s open_sessions=%s unmatched_sessions=%s",camera.camera_code,len(candidates),active_runtime,open_db,unmatched_db)
+        if occupancy_changed:
             self.last_occupancy_signature[camera_id]=signature; self.log.info("Zone occupancy calculated zone=%s mode=INDEPENDENT_ZONE observed=%s confirmed_occupancy=%s candidate=%s leaving=%s recovery=%s open_db=%s unmatched_open=%s capacity=%s occupancy_state=%s session_health=%s",camera.camera_code,*signature[:7],zone.capacity,occupancy.zone_state,occupancy.session_health_state)
         self.monitor.update_camera(camera_id,state=occupancy.zone_state,track=stats["current_track_count"],session=summary,vehicle=f"{occupancy.confirmed_occupancy_count}/{zone.capacity}",fps=f"{actual_fps:.2f}",raw=stats.get("raw_detections",0),detected=stats.get("vehicle_detections",0),inside=len(candidates),inference=f"{inference_ms:.1f}",tracker=stats.get("tracker_status","IDLE"),configured_preview_fps=camera.preview_fps,candidates=occupancy.candidate_count,parked=occupancy.confirmed_occupancy_count,leaving=occupancy.leaving_session_count,recovery_pending=occupancy.recovery_pending_count,open_db=open_db,observed=occupancy.observed_vehicle_count,unmatched_open=unmatched_db,session_health=occupancy.session_health_state,session_runtime_mismatch=bool(unmatched_db))
         self.log.debug("Zone aggregate camera=%s occupancy_state=%s confirmed_occupancy=%s capacity=%s candidates=%s",camera.camera_code,occupancy.zone_state,occupancy.confirmed_occupancy_count,zone.capacity,occupancy.candidate_count)

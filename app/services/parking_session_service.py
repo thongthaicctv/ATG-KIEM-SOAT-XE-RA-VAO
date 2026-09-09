@@ -76,6 +76,15 @@ class ParkingSessionService:
             session.left_at=left_at; session.exit_snapshot_path=exit_path; session.departure_time_uncertain=bool(departure_time_uncertain)
             if departure_time_uncertain: session.event_source="CAMERA_RECOVERY"; session.first_confirmed_empty_after_reconnect=left_at
             session.parking_duration_seconds=seconds_between(session.parked_at,left_at); session.status=status
+            # Phase 4.7C HOTFIX 1: dong (ended_at=left_at) TAT CA track link con mo cua CHINH
+            # session nay - bao gom track link "hien tai" duy nhat con active, thu ma
+            # try_add_track_link() KHONG BAO GIO dong vi no chi dong link CU khi co link MOI
+            # thay the, khong bao gio duoc goi luc hoan tat session (CONFIRMED qua audit
+            # CASE_CLEAN Windows: 12 open links = dung 6 session COMPLETED x 1 link/session).
+            # Dung CUNG left_at (khong phai thoi diem audit/ghi log muon hon) va commit=False
+            # de nam trong CUNG 1 transaction voi viec dong session ben duoi - tranh trang thai
+            # "COMPLETED nhung van con link mo" xuat hien du chi trong khoang khac rat ngan.
+            self.repo.end_open_track_links(session.id,left_at,commit=False)
             self._event(camera_id,session.id,EventType.PARK_END,left_at,vehicle,exit_path,commit=False)
             self.repo.db.commit(); self.repo.db.refresh(session)
         except Exception:
