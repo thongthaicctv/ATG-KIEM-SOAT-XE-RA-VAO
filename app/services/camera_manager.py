@@ -15,6 +15,10 @@ class CameraManager(QObject):
     frame_ready=Signal(int,object,object); preview_frame=Signal(int,object,object); status_changed=Signal(int,bool,str); detector_error=Signal(int,str); error=Signal(int,str)
     def __init__(self,detector,parent=None,max_cameras=10,preview_fps=5.0):
         super().__init__(parent); self.detector=detector; self.max_cameras=max(1,int(max_cameras)); self.items={}; self.preview_sequences={}; self.preview_timers={}; self.last_preview_emit={}; self.suspended={}
+        # Phase 4.7E-B1: last actual_preview_fps computed per camera (see _flush_preview) -
+        # kept here (not just forwarded once in the preview_frame signal) so
+        # pipeline_diagnostics() can report it even on a tick where nothing new flushed.
+        self.last_actual_preview_fps={}
     def start_camera(self,camera):
         self.stop_camera(camera.id)
         if len(self.items)>=self.max_cameras:
@@ -29,7 +33,7 @@ class CameraManager(QObject):
     def stop_camera(self,camera_id):
         timer=self.preview_timers.pop(camera_id,None)
         if timer: timer.stop(); timer.deleteLater()
-        self.preview_sequences.pop(camera_id,None); self.last_preview_emit.pop(camera_id,None)
+        self.preview_sequences.pop(camera_id,None); self.last_preview_emit.pop(camera_id,None); self.last_actual_preview_fps.pop(camera_id,None)
         item=self.items.pop(camera_id,None)
         if item:
             thread,worker=item; worker.stop(); thread.quit(); thread.wait(3000)
@@ -55,7 +59,40 @@ class CameraManager(QObject):
         if not item: return
         sequence,frame,capture_timestamp,capture_wall_time=item; self.preview_sequences[camera_id]=sequence
         previous=self.last_preview_emit.get(camera_id); actual_fps=1/(now-previous) if previous is not None and now>previous else 0.0; self.last_preview_emit[camera_id]=now
+        self.last_actual_preview_fps[camera_id]=actual_fps
         self.preview_frame.emit(camera_id,frame,{"capture_timestamp":capture_wall_time.isoformat(),"capture_monotonic":capture_timestamp,"preview_display_timestamp":now,"preview_frame_age_ms":max(0,(now-capture_timestamp)*1000),"dropped_preview_frames":worker.dropped_preview_frames,"configured_preview_fps":float(worker.camera.preview_fps),"actual_preview_fps":actual_fps})
+    def pipeline_diagnostics(self,camera_id):
+        """Phase 4.7E-B1: on-demand, NON-DESTRUCTIVE diagnostic snapshot for one camera -
+        reads STAGE R (raw_capture_monotonic) and STAGE W (worker_preview_sequence/
+        worker_preview_monotonic) directly from the worker, live, regardless of whether
+        a new preview frame happened to be flushed on this or any recent QTimer tick.
+        This lets a caller (MainWindow._check_pipeline_health(), which already polls
+        every camera on its own independent global timer) observe raw-capture/worker-
+        preview liveness even while _flush_preview() itself is stalled - the exact
+        Case D gap identified in the Phase 4.7E-A audit. Returns None if the camera
+        isn't currently running. Never emits a signal and never mutates preview
+        delivery state (see CameraWorker.preview_heartbeat())."""
+        item=self.items.get(camera_id)
+        if not item: return None
+        worker=item[1]; sequence,worker_preview_monotonic=worker.preview_heartbeat()
+        return {"raw_capture_monotonic":worker.raw_capture_monotonic(),"worker_preview_sequence":sequence,
+                "worker_preview_monotonic":worker_preview_monotonic,"manager_preview_emit_monotonic":self.last_preview_emit.get(camera_id),
+                "configured_preview_fps":float(worker.camera.preview_fps),"actual_preview_fps":self.last_actual_preview_fps.get(camera_id),
+                "dropped_capture_frames":worker.raw_dropped_capture_frames(),"dropped_preview_frames":worker.dropped_preview_frames}
+    def debug_freeze_preview_timer(self,camera_id,frozen: bool):
+        """Phase 4.7E-B1 muc 10 - DEBUG/TEST-ONLY: dung hoac tiep tuc CHI QTimer preview
+        cua MOT camera, KHONG dung CameraWorker/RtspCapture/AI - tai hien co kiem soat,
+        xac dinh (deterministic) truong hop preview downstream (CameraManager/UI) bi
+        dung trong khi RAW/AI/WORKER PREVIEW van tiep tuc tien trien (Case D trong bao
+        cao audit Phase 4.7E-A). KHONG duoc goi tu bat ky luong xu ly san xuat/UI binh
+        thuong nao - chi danh cho test/chan doan Windows co chu dich (xem yeu cau
+        "Do NOT expose this as normal production behavior"). Tra ve False neu camera
+        khong dang chay (khong co timer de dung/tiep tuc)."""
+        timer=self.preview_timers.get(camera_id)
+        if not timer: return False
+        if frozen: timer.stop()
+        else: timer.start()
+        return True
     @staticmethod
     def grab_frame(rtsp_url,timeout_ms=5000):
         from .rtsp_capture import grab_rtsp_frame

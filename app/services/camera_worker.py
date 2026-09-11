@@ -66,6 +66,14 @@ class CameraWorker(QObject):
         try: tracker=tracker_factory(max_missed=buffer_frames)
         except TypeError: tracker=tracker_factory()
         super().__init__(); self.camera=camera; self.detector=detector; self.tracker=tracker; self.tracker_buffer_frames=buffer_frames; self.running=False; self.capture=None; self.primary_track_id=None; self.last_tracker_telemetry=0.0; self.preview_lock=threading.Lock(); self.latest_preview=None; self.preview_sequence=0; self.dropped_preview_frames=0; self.log=logging.getLogger(f"camera.{camera.camera_code}")
+        # Phase 4.7E-B1: STAGE W heartbeat (worker preview production) - RECORDED
+        # SEPARATELY from the raw RtspCapture capture_timestamp passed into
+        # _emit_preview(), per audit correction "Do NOT incorrectly name raw
+        # capture_timestamp as worker-preview time". Read via preview_heartbeat()
+        # below, which is NON-DESTRUCTIVE (unlike take_latest_preview(), it never
+        # clears latest_preview) so diagnostic polling never interferes with real
+        # preview delivery/consumption.
+        self.last_preview_produced_monotonic=None
 
     @Slot()
     def run(self):
@@ -144,11 +152,43 @@ class CameraWorker(QObject):
             with self.preview_lock:
                 if self.latest_preview is not None: self.dropped_preview_frames+=1
                 self.preview_sequence+=1; self.latest_preview=(self.preview_sequence,rotated,capture_timestamp,capture_wall_time)
+                # Phase 4.7E-B1: STAGE W heartbeat - the moment THIS worker actually
+                # produced a preview frame, independent of the raw capture_timestamp
+                # (RtspCapture-side) and independent of whether CameraManager ever
+                # flushes/consumes it (take_latest_preview() is pull-based and can
+                # stall downstream without this heartbeat ever stopping).
+                self.last_preview_produced_monotonic=time.monotonic()
 
     def take_latest_preview(self,last_sequence=0):
         with self.preview_lock:
             if self.latest_preview is None or self.latest_preview[0]==last_sequence: return None
             item=self.latest_preview; self.latest_preview=None; return item
+
+    def preview_heartbeat(self):
+        """Phase 4.7E-B1: NON-DESTRUCTIVE diagnostic read of STAGE W (worker preview
+        production) - returns (preview_sequence, last_preview_produced_monotonic)
+        WITHOUT touching latest_preview, so polling this for telemetry can never cause
+        a real preview frame to be lost/skipped (unlike take_latest_preview())."""
+        with self.preview_lock:
+            return self.preview_sequence,self.last_preview_produced_monotonic
+
+    def raw_capture_monotonic(self):
+        """Phase 4.7E-B1: STAGE R heartbeat (raw RTSP frame production), read directly
+        from RtspCapture.last_valid_frame_monotonic - updated continuously by the
+        RtspCapture reader thread in _drain_buffer(), completely independent of whether
+        this worker's own run() loop ever reaches detector.detect()/frame_ready.emit()
+        (audit correction: a hung detector/tracker must not be observable as
+        CAPTURE_STALE). Cross-thread attribute read, no lock - a single float/None
+        rebind is atomic under the GIL and this value is diagnostic-only (never used
+        for a business/recovery decision in this phase), so no new locking is
+        introduced; self.capture itself may be reassigned by run() during reconnect,
+        but the local reference taken here is always internally consistent."""
+        cap=self.capture
+        return cap.last_valid_frame_monotonic if cap is not None else None
+
+    def raw_dropped_capture_frames(self):
+        cap=self.capture
+        return cap.dropped_capture_frames if cap is not None else 0
 
     def set_preview_fps(self,preview_fps):
         value=float(preview_fps)

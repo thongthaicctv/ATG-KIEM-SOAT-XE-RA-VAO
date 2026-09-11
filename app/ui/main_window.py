@@ -15,6 +15,7 @@ from app.services.detector import build_detector
 from app.services.parking_session_service import ParkingSessionService
 from app.services.parking_state_engine import ParkingStateEngine
 from app.services.snapshot_service import SnapshotService
+from app.services.pipeline_diagnostics import build_diagnostic_snapshot,detect_gui_event_loop_delay
 from app.services.session_vehicle_matcher import is_same_session_vehicle
 from app.services.zone_runtime import ZoneRuntimeState
 from app.ui.camera_dialog import CameraDialog
@@ -33,7 +34,13 @@ class MainWindow(QMainWindow):
         self.session_service.signals.session_started.connect(self.refresh_history_session); self.session_service.signals.session_recovered.connect(self.refresh_history_session); self.session_service.signals.session_completed.connect(self.refresh_history_session)
         self.detector=build_detector(settings.detector_model,settings.vehicle_confidence,settings.enable_motorcycles,settings.detector_device,settings.detector_half)
         self.manager=CameraManager(self.detector,self,max_cameras=settings.max_cameras,preview_fps=settings.preview_fps); self.manager.frame_ready.connect(self.on_zone_frame_safe); self.manager.preview_frame.connect(self.on_preview_frame); self.manager.status_changed.connect(self.on_camera_status); self.manager.detector_error.connect(self.on_detector_error); self.manager.error.connect(lambda cid,msg:self.log.warning("Camera %s: %s",cid,msg))
-        self.pipeline_errors={}; self.last_capture_frame={}; self.last_ai_result={}; self.zones={}; self.engines={}; self.frames={}; self.raw_frames={}; self.last_payload={}; self.last_preview_telemetry={}; self.last_occupancy_signature={}; self.active={}; self.preview_dialogs={}; self.setWindowTitle("Parking Monitoring System - Phase 1.4"); self.resize(1280,800); self._build_ui(); self.reload(start_workers=False); self._recover(); self.reload(start_workers=True); self.pipeline_watchdog=QTimer(self); self.pipeline_watchdog.setInterval(2000); self.pipeline_watchdog.timeout.connect(self._check_pipeline_health); self.pipeline_watchdog.start()
+        self.pipeline_errors={}; self.last_capture_frame={}; self.last_ai_result={}; self.zones={}; self.engines={}; self.frames={}; self.raw_frames={}; self.last_payload={}; self.last_preview_telemetry={}; self.last_occupancy_signature={}; self.active={}; self.preview_dialogs={}
+        # Phase 4.7E-B1: diagnostic-only stage heartbeats/telemetry, kept SEPARATE from
+        # last_capture_frame/last_ai_result above (unchanged, still drive the existing
+        # AI_RESULT_STALE check as before) and from business state - see
+        # app/services/pipeline_diagnostics.py and _check_pipeline_health() below.
+        self.last_raw_capture_monotonic={}; self.last_ui_preview_monotonic={}; self.last_pipeline_diagnostic_log={}; self._last_watchdog_tick_monotonic=None
+        self.setWindowTitle("Parking Monitoring System - Phase 1.4"); self.resize(1280,800); self._build_ui(); self.reload(start_workers=False); self._recover(); self.reload(start_workers=True); self.pipeline_watchdog=QTimer(self); self.pipeline_watchdog.setInterval(2000); self.pipeline_watchdog.timeout.connect(self._check_pipeline_health); self.pipeline_watchdog.start()
     def _build_ui(self):
         splitter=QSplitter(Qt.Vertical); self.tabs=QTabWidget(); tabs=self.tabs; self.camera_page=QWidget(); lay=QVBoxLayout(self.camera_page); bar=QHBoxLayout();
         for text,handler in [("Thêm",self.add_camera),("Sửa",self.edit_camera),("Xóa",self.delete_camera),("Kiểm tra RTSP",self.test_rtsp),("Mở preview",self.open_preview),("Vẽ polygon",self.edit_polygon),("Hướng dẫn debug",self.open_debug_guide),("Làm mới",self.reload)]:
@@ -99,13 +106,13 @@ class MainWindow(QMainWindow):
                     preview_fps=values["preview_fps"]; self.cameras.update(camera.id,preview_fps=preview_fps); self.manager.update_preview_fps(camera.id,preview_fps); self.monitor.set_preview_fps(camera.id,preview_fps); self.log.info("Preview FPS updated camera=%s configured_preview_fps=%s without_worker_restart=true",camera.camera_code,preview_fps); return
                 if values["rotation_degrees"]!=camera.rotation_degrees and camera.polygon_points:
                     values["polygon_points"]=rotate_normalized_polygon(camera.polygon_points,camera.rotation_degrees,values["rotation_degrees"])
-                self.manager.stop_camera(camera.id); self.cameras.update(camera.id,**values); self.engines.pop(camera.id,None); self.raw_frames.pop(camera.id,None); self.frames.pop(camera.id,None); self.reload()
+                self.manager.stop_camera(camera.id); self._reset_generation_diagnostics(camera.id); self.cameras.update(camera.id,**values); self.engines.pop(camera.id,None); self.raw_frames.pop(camera.id,None); self.frames.pop(camera.id,None); self.reload()
             except IntegrityError: self.db.rollback(); QMessageBox.warning(self,"Trùng dữ liệu","Mã camera hoặc mã vị trí đã tồn tại.")
     def delete_camera(self):
         camera=self.selected_camera()
         if camera and QMessageBox.question(self,"Xác nhận",f"Xóa camera {camera.camera_code}?")==QMessageBox.Yes:
             if self.parking.active_for_camera(camera.id): QMessageBox.warning(self,"Không thể xóa","Camera có phiên đỗ đang hoạt động."); return
-            self.manager.stop_camera(camera.id); self.cameras.delete(camera.id); self.reload()
+            self.manager.stop_camera(camera.id); self._reset_generation_diagnostics(camera.id); self.cameras.delete(camera.id); self.reload()
     def test_rtsp(self):
         camera=self.selected_camera()
         if not camera: return
@@ -115,7 +122,7 @@ class MainWindow(QMainWindow):
             if frame is not None: frame=rotate_frame(frame,camera.rotation_degrees)
         if frame is not None:
             if camera.enabled:
-                self.manager.stop_camera(camera.id); self.manager.start_camera(self.cameras.get(camera.id))
+                self.manager.stop_camera(camera.id); self._reset_generation_diagnostics(camera.id); self.manager.start_camera(self.cameras.get(camera.id))
             QMessageBox.information(self,"Kiểm tra RTSP","Kết nối thành công. Worker đã được khởi động lại.")
         else: QMessageBox.warning(self,"Kiểm tra RTSP","Không đọc được frame.")
     def edit_polygon(self):
@@ -127,7 +134,7 @@ class MainWindow(QMainWindow):
             if frame is not None: frame=rotate_frame(frame,camera.rotation_degrees)
         if frame is None: QMessageBox.warning(self,"Không có ảnh","Không lấy được frame hiện tại."); return
         dlg=PolygonEditor(frame,camera.polygon_points,self,ignore_zones=camera.ignore_zones)
-        if dlg.exec(): self.cameras.update(camera.id,polygon_points=dlg.normalized_points(),ignore_zones=dlg.normalized_ignore_zones()); self.manager.stop_camera(camera.id); self.zones.pop(camera.id,None); self.engines.pop(camera.id,None); self.reload()
+        if dlg.exec(): self.cameras.update(camera.id,polygon_points=dlg.normalized_points(),ignore_zones=dlg.normalized_ignore_zones()); self.manager.stop_camera(camera.id); self._reset_generation_diagnostics(camera.id); self.zones.pop(camera.id,None); self.engines.pop(camera.id,None); self.reload()
     def open_preview(self,camera_id=None):
         if camera_id is None:
             camera=self.selected_camera()
@@ -176,12 +183,59 @@ class MainWindow(QMainWindow):
             if count==1 or count%30==0: self.log.exception("Recoverable AI/session pipeline error camera=%s consecutive=%s error=%s",camera_id,count,exc)
             self.monitor.update_camera(camera_id,state="AI_SESSION_RECOVERY" if count<3 else "AI_SESSION_ERROR",track="STALE",session="Giữ nguyên phiên",vehicle="-",fps="STALE",tracker="TRACK_SESSION_CONFLICT")
             if count<=3: self._reconcile_zone(camera_id)
+    def _reset_generation_diagnostics(self,camera_id):
+        """Phase 4.7E-B1.1 muc 7: mot the he CameraWorker MOI (sau manager.stop_camera()
+        + start_camera(), vd tu edit_camera()/delete_camera()/test_rtsp()/edit_polygon())
+        khong duoc "ke thua" heartbeat CHAN DOAN tu the he worker CU. worker moi la mot
+        instance CameraWorker moi (last_preview_produced_monotonic cua no tu nhien la
+        None), nhung last_ai_result/last_ui_preview_monotonic (va cac dict chan doan B1
+        khac) song tren CHINH MainWindow nen KHONG tu dong reset - neu the he cu vua
+        cap nhat mot heartbeat ngay truoc khi bi dung, tuoi (age) cua no van con "moi"
+        trong vai giay dau cua the he moi, khien classify_pipeline_health() bao cao sai
+        LIVE truoc khi the he moi tung san xuat bat ky ket qua AI/preview nao. Day CHI
+        la xoa telemetry chan doan - KHONG dong den last_capture_frame (van dieu khien
+        AI_RESULT_STALE hien co, khong doi), business/session state, hay bat ky logic
+        phuc hoi tu dong nao."""
+        self.last_ai_result.pop(camera_id,None); self.last_ui_preview_monotonic.pop(camera_id,None)
+        self.last_raw_capture_monotonic.pop(camera_id,None); self.last_pipeline_diagnostic_log.pop(camera_id,None)
     def _check_pipeline_health(self):
         now=time.monotonic()
+        # Phase 4.7E-B1 muc 7: GUI event-loop-delay telemetry - THUAN CHAN DOAN, khong
+        # bao gio dung cho logic nghiep vu hay restart camera (xem detect_gui_event_loop_delay).
+        # Phat hien SAU KHI QTimer nay tick lai duoc, tuc la bang chung GIAN TIEP rang
+        # main/GUI event loop vua bi block/tre - khong the canh bao TRONG LUC dang bi dong.
+        expected_interval=self.pipeline_watchdog.interval()/1000.0
+        if self._last_watchdog_tick_monotonic is not None:
+            actual_gap=now-self._last_watchdog_tick_monotonic
+            if detect_gui_event_loop_delay(expected_interval,actual_gap):
+                self.log.warning("GUI_EVENT_LOOP_DELAY expected_interval_seconds=%.2f gap_seconds=%.2f",expected_interval,actual_gap)
+        self._last_watchdog_tick_monotonic=now
         for camera_id,captured_at in list(self.last_capture_frame.items()):
             capture_age=now-captured_at; ai_age=now-self.last_ai_result.get(camera_id,0)
             if capture_age<3 and camera_id in self.last_ai_result and ai_age>10:
                 self.monitor.update_camera(camera_id,state="AI_SESSION_ERROR",track="STALE",session="Giữ nguyên phiên",vehicle="-",fps="STALE",tracker="AI_RESULT_STALE")
+        # Phase 4.7E-B1 muc 6: rate-limited, mot ban ghi chan doan/camera - lap qua MOI
+        # camera dang chay trong CameraManager (khong chi cac camera da TUNG giao duoc
+        # preview toi MainWindow qua last_capture_frame) de STAGE R/W van co the duoc
+        # chan doan ke ca khi preview downstream (STAGE M/U) chua bao gio thanh cong -
+        # dung Case A/D ma audit Phase 4.7E-A da xac dinh la diem mu cu.
+        for camera_id in list(self.manager.items.keys()):
+            diag_info=self.manager.pipeline_diagnostics(camera_id)
+            if diag_info is None: continue
+            self.last_raw_capture_monotonic[camera_id]=diag_info["raw_capture_monotonic"]
+            if now-self.last_pipeline_diagnostic_log.get(camera_id,0)<self.settings.telemetry_interval_seconds: continue
+            self.last_pipeline_diagnostic_log[camera_id]=now
+            snapshot=build_diagnostic_snapshot(camera_id,now,raw_capture_monotonic=diag_info["raw_capture_monotonic"],
+                ai_result_monotonic=self.last_ai_result.get(camera_id),worker_preview_sequence=diag_info["worker_preview_sequence"],
+                worker_preview_monotonic=diag_info["worker_preview_monotonic"],manager_preview_emit_monotonic=diag_info["manager_preview_emit_monotonic"],
+                ui_preview_monotonic=self.last_ui_preview_monotonic.get(camera_id),configured_preview_fps=diag_info["configured_preview_fps"],
+                actual_preview_fps=diag_info["actual_preview_fps"],dropped_capture_frames=diag_info["dropped_capture_frames"],
+                dropped_preview_frames=diag_info["dropped_preview_frames"])
+            camera=self.cameras.get(camera_id); camera_code=camera.camera_code if camera else camera_id
+            self.log.info("Pipeline diagnostic camera=%s classification=%s raw_capture_age=%s ai_result_age=%s worker_preview_sequence=%s worker_preview_age=%s manager_preview_emit_age=%s ui_preview_age=%s configured_preview_fps=%s actual_preview_fps=%s dropped_capture_frames=%s dropped_preview_frames=%s",
+                camera_code,snapshot.classification,snapshot.raw_capture_age,snapshot.ai_result_age,snapshot.worker_preview_sequence,
+                snapshot.worker_preview_age,snapshot.manager_preview_emit_age,snapshot.ui_preview_age,snapshot.configured_preview_fps,
+                snapshot.actual_preview_fps,snapshot.dropped_capture_frames,snapshot.dropped_preview_frames,extra={"telemetry":True})
     def _reconcile_zone(self,camera_id):
         camera=self.cameras.get(camera_id)
         if not camera: return
@@ -330,6 +384,12 @@ class MainWindow(QMainWindow):
         self.monitor.update_frame(camera_id,annotated)
         dialog=self.preview_dialogs.get(camera_id)
         if dialog: dialog.update_frame(annotated)
+        # Phase 4.7E-B1: STAGE U heartbeat - recorded AFTER monitor/dialog update calls
+        # succeed (not before), per audit requirement, so an exception raised anywhere
+        # above in this method (annotate_frame, widget update, ...) correctly leaves
+        # last_ui_preview_monotonic un-advanced for this cycle rather than falsely
+        # reporting the UI as having applied a frame it never actually rendered.
+        self.last_ui_preview_monotonic[camera_id]=time.monotonic()
         tick=time.monotonic()
         if camera.ai_debug_overlay and tick-self.last_preview_telemetry.get(camera_id,0)>=self.settings.telemetry_interval_seconds:
             self.last_preview_telemetry[camera_id]=tick; last_seen=max(0,tick-engine.last_vehicle_seen_tick) if engine and engine.last_vehicle_seen_tick is not None else -1; self.log.info("Pipeline telemetry camera=%s capture_timestamp=%s inference_start=%s inference_end=%s preview_display_timestamp=%.6f ai_frame_age_ms=%.1f preview_frame_age_ms=%.1f configured_preview_fps=%.2f actual_preview_fps=%.2f dropped_capture_frames=%s dropped_preview_frames=%s queue_size=%s motorcycle=%s time_since_last_detection=%.1f presence_ratio=%.2f candidate_elapsed=%.1f candidate_miss_elapsed=%.1f",camera.camera_code,stats.get("capture_timestamp"),stats.get("inference_start"),stats.get("inference_end"),preview_stats.get("preview_display_timestamp",0),float(stats.get("ai_frame_age_ms",0)),float(preview_stats.get("preview_frame_age_ms",0)),float(preview_stats.get("configured_preview_fps",camera.preview_fps)),float(preview_stats.get("actual_preview_fps",0)),stats.get("dropped_capture_frames",0),preview_stats.get("dropped_preview_frames",0),stats.get("queue_size",0),[r for r in stats.get("vehicle_results",[]) if r.get("class")=="motorcycle"],last_seen,float(stats.get("presence_ratio",0)),float(stats.get("candidate_elapsed",0)),float(stats.get("candidate_miss_elapsed",0)),extra={"telemetry":True})
