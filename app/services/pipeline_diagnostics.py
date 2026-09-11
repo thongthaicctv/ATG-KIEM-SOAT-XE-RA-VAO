@@ -44,6 +44,17 @@ DEFAULT_MANAGER_PREVIEW_STALE_SECONDS = 6.0
 DEFAULT_UI_PREVIEW_STALE_SECONDS = 6.0
 DEFAULT_GUI_DELAY_TOLERANCE_SECONDS = 1.0
 
+# Phase 4.7E-B2 - nguong cho khoi phuc preview downstream AN TOAN, TOI THIEU (xem
+# MainWindow._maybe_recover_preview_downstream() / CameraManager.recover_preview_timer()).
+# COOLDOWN: sau MOT lan thu khoi phuc, khong duoc thu lai ngay (tranh vong lap restart) -
+# 10s nam trong khoang 10-15s duoc de xuat trong dac ta. CONFIRM_TIMEOUT: thoi gian toi
+# da cho phep tu luc goi timer.start() den luc phai thay bang chung xac nhan (manager/UI
+# heartbeat tien trien + classification tro lai LIVE) truoc khi bi coi la
+# PREVIEW_RECOVERY_FAILED - 10s la du rong so voi chu ky preview thong thuong (5 FPS =
+# 0.2s/frame) de khong bao that bai gia trong luc timer vua duoc khoi dong lai.
+DEFAULT_PREVIEW_RECOVERY_COOLDOWN_SECONDS = 10.0
+DEFAULT_PREVIEW_RECOVERY_CONFIRM_TIMEOUT_SECONDS = 10.0
+
 
 @dataclass(frozen=True, slots=True)
 class PipelineDiagnosticSnapshot:

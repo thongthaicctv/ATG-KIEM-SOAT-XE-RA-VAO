@@ -93,6 +93,25 @@ class CameraManager(QObject):
         if frozen: timer.stop()
         else: timer.start()
         return True
+    def recover_preview_timer(self,camera_id) -> bool:
+        """Phase 4.7E-B2 - hanh dong khoi phuc SAN XUAT DUY NHAT duoc phep cho
+        PREVIEW_DOWNSTREAM_STALE (Windows LAN da chung minh RAW/AI/WORKER PREVIEW van
+        LIVE trong khi rieng manager/UI preview bi dung - xem bao cao chan doan B1.1).
+        Tuong duong chinh xac 'if preview timer exists and is unexpectedly inactive:
+        timer.start()' (yeu cau muc 3) - KHONG dung den CameraWorker/RtspCapture/
+        detector/tracker/ZoneRuntime/session: ham nay CHI doc self.preview_timers va,
+        neu can, goi .start() tren DUY NHAT QTimer cua camera do. Khac voi
+        debug_freeze_preview_timer() (dieu khien 2 chieu, chi de test), ham nay la MOT
+        CHIEU va idempotent - goi lai khi timer da active se khong lam gi (tra ve
+        False), an toan de goi lai o moi watchdog tick ma khong can tu kiem tra truoc.
+        Tra ve True chi khi thuc su vua khoi dong lai mot timer dang bi dung; False neu
+        camera khong dang chay (khong co timer) hoac timer van dang hoat dong binh
+        thuong (khong co gi de khoi phuc)."""
+        timer=self.preview_timers.get(camera_id)
+        if not timer: return False
+        if timer.isActive(): return False
+        timer.start()
+        return True
     @staticmethod
     def grab_frame(rtsp_url,timeout_ms=5000):
         from .rtsp_capture import grab_rtsp_frame

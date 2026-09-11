@@ -126,8 +126,15 @@ def parse_args(argv=None):
     parser.add_argument("--database", required=True, type=Path, help="Duong dan DB TEST/DEBUG (BAT BUOC, khong duoc la data/parking.db).")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda:0"), default="auto")
     parser.add_argument("--normal-seconds", type=float, default=30.0, help="Thoi gian chay binh thuong truoc khi dong bang preview timer.")
-    parser.add_argument("--freeze-seconds", type=float, default=15.0, help="Thoi gian giu preview timer bi dong bang.")
+    parser.add_argument("--freeze-seconds", type=float, default=15.0, help="Thoi gian giu preview timer bi dong bang (khi --disable-manual-resume, day la khung thoi gian de QUAN SAT B2 tu khoi phuc - nen dat lon hon nguong xac nhan/cooldown cua B2).")
     parser.add_argument("--after-seconds", type=float, default=30.0, help="Thoi gian quan sat sau khi tiep tuc (resume) preview timer.")
+    parser.add_argument("--disable-manual-resume", action="store_true", dest="disable_manual_resume",
+                         help="Phase 4.7E-B2: KHONG lich goi debug_freeze_preview_timer(camera_id, False) (resume "
+                              "thu cong) sau --freeze-seconds - de qua trinh khoi phuc DUY NHAT den tu "
+                              "MainWindow._maybe_recover_preview_downstream()/CameraManager.recover_preview_timer() "
+                              "tu dong cua B2, chung minh no thuc su hoat dong ma khong can can thiep thu cong. "
+                              "Khi CO co nay, --freeze-seconds nen du lon (vd 60s) de bao trum ca cooldown lan "
+                              "thoi gian xac nhan cua B2.")
     return parser.parse_args(argv)
 
 
@@ -258,13 +265,32 @@ def main(argv=None) -> int:
                     "phai loi cua bai chan doan preview-freeze nay.", freeze_camera, camera_id, ok, freeze_camera)
 
     def _finish():
-        log.warning("Phase 4.7E-B1.1/B1.2 diagnostic: het khung thoi gian quan sat (normal=%.1fs freeze=%.1fs "
-                    "after=%.1fs) cho freeze_camera=%s - ung dung TIEP TUC chay binh thuong, khong tu dong "
-                    "dong/khong tu dong khoi dong lai camera nao.", args.normal_seconds, args.freeze_seconds,
-                    args.after_seconds, freeze_camera)
+        if args.disable_manual_resume:
+            log.warning("Phase 4.7E-B2 diagnostic: het khung thoi gian quan sat (normal=%.1fs freeze=%.1fs "
+                        "after=%.1fs) cho freeze_camera=%s VOI --disable-manual-resume - preview timer chi duoc "
+                        "khoi dong lai NEU MainWindow._maybe_recover_preview_downstream()/"
+                        "CameraManager.recover_preview_timer() (B2) da tu dong lam viec do; kiem tra log tim "
+                        "PREVIEW_RECOVERY_ATTEMPT/PREVIEW_RECOVERY_CONFIRMED cho camera=%s. Ung dung TIEP TUC "
+                        "chay binh thuong, khong tu dong dong/khong tu dong khoi dong lai camera nao boi CHINH "
+                        "script nay.", args.normal_seconds, args.freeze_seconds, args.after_seconds,
+                        freeze_camera, freeze_camera)
+        else:
+            log.warning("Phase 4.7E-B1.1/B1.2 diagnostic: het khung thoi gian quan sat (normal=%.1fs freeze=%.1fs "
+                        "after=%.1fs) cho freeze_camera=%s - ung dung TIEP TUC chay binh thuong, khong tu dong "
+                        "dong/khong tu dong khoi dong lai camera nao.", args.normal_seconds, args.freeze_seconds,
+                        args.after_seconds, freeze_camera)
 
     QTimer.singleShot(int(args.normal_seconds * 1000), _freeze)
-    QTimer.singleShot(int((args.normal_seconds + args.freeze_seconds) * 1000), _resume)
+    if args.disable_manual_resume:
+        # Phase 4.7E-B2 muc 10: KHONG lich resume thu cong - de nguyen preview timer o
+        # trang thai bi dong bang va de B2 (MainWindow._maybe_recover_preview_downstream(),
+        # chay tu watchdog QTimer da co san cua chinh ung dung, hoan toan doc lap voi script
+        # nay) tu phat hien PREVIEW_DOWNSTREAM_STALE va tu khoi dong lai timer. Neu B2 khong
+        # hoat dong, timer se van bi dong bang mai - do CHINH LA bai kiem tra.
+        log.warning("Phase 4.7E-B2 diagnostic: --disable-manual-resume duoc bat - se KHONG tu resume camera=%s "
+                    "sau khi dong bang; cho B2 tu khoi phuc.", freeze_camera)
+    else:
+        QTimer.singleShot(int((args.normal_seconds + args.freeze_seconds) * 1000), _resume)
     QTimer.singleShot(int((args.normal_seconds + args.freeze_seconds + args.after_seconds) * 1000), _finish)
 
     log.warning("Phase 4.7E-B1.1/B1.2 diagnostic scheduled include_cameras=%s freeze_camera=%s database=%s "

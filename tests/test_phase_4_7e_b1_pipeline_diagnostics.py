@@ -180,12 +180,20 @@ def test_check_pipeline_health_logs_diagnostic_and_gui_event_loop_delay(qtbot, c
         pipeline_watchdog=watchdog, last_capture_frame={}, last_ai_result={1: 99.5},
         last_raw_capture_monotonic={}, last_ui_preview_monotonic={1: 99.6}, last_pipeline_diagnostic_log={},
         _last_watchdog_tick_monotonic=None,
-        manager=SimpleNamespace(items={1: (None, None)}, pipeline_diagnostics=lambda cid: diag_value if cid == 1 else None),
+        # Phase 4.7E-B2: so sach khoi phuc preview downstream - can co de
+        # _maybe_recover_preview_downstream() (goi tu _check_pipeline_health()) khong loi.
+        last_preview_recovery_monotonic={}, preview_recovery_attempts={}, _preview_recovery_pending_since={},
+        manager=SimpleNamespace(items={1: (None, None)}, pipeline_diagnostics=lambda cid: diag_value if cid == 1 else None,
+                                 recover_preview_timer=lambda cid: False),
         cameras=SimpleNamespace(get=lambda cid: SimpleNamespace(camera_code="CAM-B1")),
         settings=SimpleNamespace(telemetry_interval_seconds=0.0),
         monitor=SimpleNamespace(update_camera=lambda *a, **kw: None),
         log=logging.getLogger("test_phase_4_7e_b1"),
     )
+    # _check_pipeline_health() calls self._maybe_recover_preview_downstream(...) - bind the
+    # real (unbound) MainWindow method against this fake `self` so the B2 guard/cooldown
+    # logic actually runs against fake's dicts, same as real B2 tests do elsewhere.
+    fake._maybe_recover_preview_downstream = lambda camera_id, snapshot, now: MainWindow._maybe_recover_preview_downstream(fake, camera_id, snapshot, now)
     with caplog.at_level(logging.INFO):
         MainWindow._check_pipeline_health(fake)
     assert any("Pipeline diagnostic" in r.message and "classification=" in r.message for r in caplog.records)
@@ -300,12 +308,19 @@ def test_b1_1_reset_generation_diagnostics_clears_only_that_camera_diagnostic_di
         last_raw_capture_monotonic={1: 102.0, 2: 202.0},
         last_pipeline_diagnostic_log={1: 103.0, 2: 203.0},
         last_capture_frame={1: 104.0, 2: 204.0},
+        # Phase 4.7E-B2: so sach khoi phuc preview downstream - cung phai duoc xoa theo camera.
+        last_preview_recovery_monotonic={1: 105.0, 2: 205.0},
+        preview_recovery_attempts={1: 1, 2: 2},
+        _preview_recovery_pending_since={1: 106.0, 2: 206.0},
     )
     MainWindow._reset_generation_diagnostics(fake, 1)
     assert 1 not in fake.last_ai_result and fake.last_ai_result[2] == 200.0
     assert 1 not in fake.last_ui_preview_monotonic and fake.last_ui_preview_monotonic[2] == 201.0
     assert 1 not in fake.last_raw_capture_monotonic and fake.last_raw_capture_monotonic[2] == 202.0
     assert 1 not in fake.last_pipeline_diagnostic_log and fake.last_pipeline_diagnostic_log[2] == 203.0
+    assert 1 not in fake.last_preview_recovery_monotonic and fake.last_preview_recovery_monotonic[2] == 205.0
+    assert 1 not in fake.preview_recovery_attempts and fake.preview_recovery_attempts[2] == 2
+    assert 1 not in fake._preview_recovery_pending_since and fake._preview_recovery_pending_since[2] == 206.0
     assert fake.last_capture_frame == {1: 104.0, 2: 204.0}  # business dict - untouched
 
 
@@ -313,7 +328,8 @@ def test_b1_1_reset_generation_diagnostics_is_a_noop_for_unknown_camera():
     """Goi voi mot camera_id chua tung co trong bat ky dict nao khong duoc gay loi
     (vd delete_camera() tren mot camera chua tung ket noi thanh cong lan nao)."""
     fake = SimpleNamespace(last_ai_result={}, last_ui_preview_monotonic={}, last_raw_capture_monotonic={},
-                            last_pipeline_diagnostic_log={})
+                            last_pipeline_diagnostic_log={}, last_preview_recovery_monotonic={},
+                            preview_recovery_attempts={}, _preview_recovery_pending_since={})
     MainWindow._reset_generation_diagnostics(fake, 999)  # must not raise
     assert fake.last_ai_result == {} and fake.last_ui_preview_monotonic == {}
 

@@ -15,7 +15,7 @@ from app.services.detector import build_detector
 from app.services.parking_session_service import ParkingSessionService
 from app.services.parking_state_engine import ParkingStateEngine
 from app.services.snapshot_service import SnapshotService
-from app.services.pipeline_diagnostics import build_diagnostic_snapshot,detect_gui_event_loop_delay
+from app.services.pipeline_diagnostics import build_diagnostic_snapshot,detect_gui_event_loop_delay,DEFAULT_PREVIEW_RECOVERY_COOLDOWN_SECONDS,DEFAULT_PREVIEW_RECOVERY_CONFIRM_TIMEOUT_SECONDS
 from app.services.session_vehicle_matcher import is_same_session_vehicle
 from app.services.zone_runtime import ZoneRuntimeState
 from app.ui.camera_dialog import CameraDialog
@@ -40,6 +40,9 @@ class MainWindow(QMainWindow):
         # AI_RESULT_STALE check as before) and from business state - see
         # app/services/pipeline_diagnostics.py and _check_pipeline_health() below.
         self.last_raw_capture_monotonic={}; self.last_ui_preview_monotonic={}; self.last_pipeline_diagnostic_log={}; self._last_watchdog_tick_monotonic=None
+        # Phase 4.7E-B2: so sach cho khoi phuc preview downstream AN TOAN, TOI THIEU -
+        # xem _maybe_recover_preview_downstream()/CameraManager.recover_preview_timer().
+        self.last_preview_recovery_monotonic={}; self.preview_recovery_attempts={}; self._preview_recovery_pending_since={}
         self.setWindowTitle("Parking Monitoring System - Phase 1.4"); self.resize(1280,800); self._build_ui(); self.reload(start_workers=False); self._recover(); self.reload(start_workers=True); self.pipeline_watchdog=QTimer(self); self.pipeline_watchdog.setInterval(2000); self.pipeline_watchdog.timeout.connect(self._check_pipeline_health); self.pipeline_watchdog.start()
     def _build_ui(self):
         splitter=QSplitter(Qt.Vertical); self.tabs=QTabWidget(); tabs=self.tabs; self.camera_page=QWidget(); lay=QVBoxLayout(self.camera_page); bar=QHBoxLayout();
@@ -195,9 +198,14 @@ class MainWindow(QMainWindow):
         LIVE truoc khi the he moi tung san xuat bat ky ket qua AI/preview nao. Day CHI
         la xoa telemetry chan doan - KHONG dong den last_capture_frame (van dieu khien
         AI_RESULT_STALE hien co, khong doi), business/session state, hay bat ky logic
-        phuc hoi tu dong nao."""
+        phuc hoi tu dong nao. Phase 4.7E-B2: cung xoa so sach khoi phuc preview downstream
+        (last_preview_recovery_monotonic/preview_recovery_attempts/
+        _preview_recovery_pending_since) cung ly do - mot the he worker MOI khong duoc
+        ke thua trang thai "dang cho xac nhan khoi phuc"/cooldown tu the he CU."""
         self.last_ai_result.pop(camera_id,None); self.last_ui_preview_monotonic.pop(camera_id,None)
         self.last_raw_capture_monotonic.pop(camera_id,None); self.last_pipeline_diagnostic_log.pop(camera_id,None)
+        self.last_preview_recovery_monotonic.pop(camera_id,None); self.preview_recovery_attempts.pop(camera_id,None)
+        self._preview_recovery_pending_since.pop(camera_id,None)
     def _check_pipeline_health(self):
         now=time.monotonic()
         # Phase 4.7E-B1 muc 7: GUI event-loop-delay telemetry - THUAN CHAN DOAN, khong
@@ -223,19 +231,62 @@ class MainWindow(QMainWindow):
             diag_info=self.manager.pipeline_diagnostics(camera_id)
             if diag_info is None: continue
             self.last_raw_capture_monotonic[camera_id]=diag_info["raw_capture_monotonic"]
-            if now-self.last_pipeline_diagnostic_log.get(camera_id,0)<self.settings.telemetry_interval_seconds: continue
-            self.last_pipeline_diagnostic_log[camera_id]=now
             snapshot=build_diagnostic_snapshot(camera_id,now,raw_capture_monotonic=diag_info["raw_capture_monotonic"],
                 ai_result_monotonic=self.last_ai_result.get(camera_id),worker_preview_sequence=diag_info["worker_preview_sequence"],
                 worker_preview_monotonic=diag_info["worker_preview_monotonic"],manager_preview_emit_monotonic=diag_info["manager_preview_emit_monotonic"],
                 ui_preview_monotonic=self.last_ui_preview_monotonic.get(camera_id),configured_preview_fps=diag_info["configured_preview_fps"],
                 actual_preview_fps=diag_info["actual_preview_fps"],dropped_capture_frames=diag_info["dropped_capture_frames"],
                 dropped_preview_frames=diag_info["dropped_preview_frames"])
+            # Phase 4.7E-B2: danh gia/khoi phuc o MOI tick cua watchdog (KHONG bi gioi
+            # han boi telemetry_interval_seconds ben duoi - neu khong, PREVIEW_DOWNSTREAM_STALE
+            # co the phai cho toi 30s mac dinh moi duoc xu ly). snapshot() la thuan/khong
+            # tac dung phu nen tinh lai moi tick khong ton kem.
+            self._maybe_recover_preview_downstream(camera_id,snapshot,now)
+            if now-self.last_pipeline_diagnostic_log.get(camera_id,0)<self.settings.telemetry_interval_seconds: continue
+            self.last_pipeline_diagnostic_log[camera_id]=now
             camera=self.cameras.get(camera_id); camera_code=camera.camera_code if camera else camera_id
             self.log.info("Pipeline diagnostic camera=%s classification=%s raw_capture_age=%s ai_result_age=%s worker_preview_sequence=%s worker_preview_age=%s manager_preview_emit_age=%s ui_preview_age=%s configured_preview_fps=%s actual_preview_fps=%s dropped_capture_frames=%s dropped_preview_frames=%s",
                 camera_code,snapshot.classification,snapshot.raw_capture_age,snapshot.ai_result_age,snapshot.worker_preview_sequence,
                 snapshot.worker_preview_age,snapshot.manager_preview_emit_age,snapshot.ui_preview_age,snapshot.configured_preview_fps,
                 snapshot.actual_preview_fps,snapshot.dropped_capture_frames,snapshot.dropped_preview_frames,extra={"telemetry":True})
+    def _maybe_recover_preview_downstream(self,camera_id,snapshot,now):
+        """Phase 4.7E-B2 - khoi phuc AN TOAN, TOI THIEU CHI cho PREVIEW_DOWNSTREAM_STALE
+        (Windows LAN da chung minh RAW/AI/WORKER PREVIEW van LIVE khi nhan nay xuat
+        hien - day CHINH LA guard: bat ky nhan nao khac, ke ca CAPTURE_STALE/AI_STALE/
+        WORKER_PREVIEW_STALE va cac nhan *_NOT_OBSERVED, deu bi BO QUA o day). Hanh dong
+        DUY NHAT la CameraManager.recover_preview_timer() - KHONG dung worker/RTSP/
+        detector/tracker/ZoneRuntime/session (ham nay khong tham chieu bat ky doi tuong
+        nao trong so do). Co rate-limit (cooldown) va xac nhan/that bai TRE (khong bao
+        gio coi timer.start() la thanh cong ngay) - xem yeu cau muc 6/7/8."""
+        pending_since=self._preview_recovery_pending_since.get(camera_id)
+        if pending_since is not None:
+            if snapshot.classification=="LIVE":
+                elapsed=now-pending_since
+                self.log.warning("PREVIEW_RECOVERY_CONFIRMED camera=%s elapsed_seconds=%.2f",camera_id,elapsed)
+                self._preview_recovery_pending_since.pop(camera_id,None)
+                return
+            elapsed=now-pending_since
+            if elapsed>DEFAULT_PREVIEW_RECOVERY_CONFIRM_TIMEOUT_SECONDS:
+                self.log.warning("PREVIEW_RECOVERY_FAILED camera=%s elapsed_seconds=%.2f",camera_id,elapsed)
+                self._preview_recovery_pending_since.pop(camera_id,None)
+                # KHONG escalate (khong RTSP/camera restart o B2) va KHONG thu lai NGAY trong
+                # cung mot tick nay - cooldown (dua tren last_preview_recovery_monotonic da ghi
+                # luc thu truoc) se gate lan thu ke tiep o MOT tick watchdog sau, tranh vong lap
+                # ATTEMPT/FAILED lien tuc moi 2s neu timer thuc su khong the khoi phuc duoc.
+                return
+            else:
+                return  # dang cho bang chung xac nhan/het han - KHONG thu lai giua chung
+        if snapshot.classification!="PREVIEW_DOWNSTREAM_STALE":
+            return  # guard muc 4: CHI dung nghia chinh xac nay
+        last_attempt=self.last_preview_recovery_monotonic.get(camera_id)
+        if last_attempt is not None and (now-last_attempt)<DEFAULT_PREVIEW_RECOVERY_COOLDOWN_SECONDS:
+            return  # cooldown - khong thu lai moi tick (yeu cau muc 6)
+        self.last_preview_recovery_monotonic[camera_id]=now
+        self.preview_recovery_attempts[camera_id]=self.preview_recovery_attempts.get(camera_id,0)+1
+        self.log.warning("PREVIEW_RECOVERY_ATTEMPT camera=%s classification=%s manager_age=%s ui_age=%s worker_age=%s",
+            camera_id,snapshot.classification,snapshot.manager_preview_emit_age,snapshot.ui_preview_age,snapshot.worker_preview_age)
+        self.manager.recover_preview_timer(camera_id)
+        self._preview_recovery_pending_since[camera_id]=now
     def _reconcile_zone(self,camera_id):
         camera=self.cameras.get(camera_id)
         if not camera: return
